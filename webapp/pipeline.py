@@ -96,15 +96,22 @@ def _extract_resume(pdf_path: str, progress=None) -> Optional[JSONResume]:
             data = handler._extract_section_data(text, name)
         return name, data
 
-    # Strictly sequential: one prompt at a time, so a free-tier key is never
-    # hit with parallel bursts.
+    # The six sections are independent, so they run concurrently. The pool hands
+    # each call a different key, and a key still serves one prompt at a time.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     results = {}
-    for i, name in enumerate(SECTIONS):
-        if progress:
-            progress("parse", "Reading your resume", f"Sections read: {i} of {len(SECTIONS)}")
-        results[name] = run(name)[1]
+    done_n = 0
     if progress:
-        progress("parse", "Reading your resume", f"Sections read: {len(SECTIONS)} of {len(SECTIONS)}")
+        progress("parse", "Reading your resume", f"Sections read: 0 of {len(SECTIONS)}")
+    with ThreadPoolExecutor(max_workers=len(SECTIONS)) as ex:
+        futs = {ex.submit(run, name): name for name in SECTIONS}
+        for fut in as_completed(futs):
+            name, data = fut.result()
+            results[name] = data
+            done_n += 1
+            if progress:
+                progress("parse", "Reading your resume", f"Sections read: {done_n} of {len(SECTIONS)}")
 
     if results.get("basics") is None and results.get("work") is None:
         raise ValueError(
