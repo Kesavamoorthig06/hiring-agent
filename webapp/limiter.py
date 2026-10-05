@@ -114,3 +114,6 @@ def install():
                     raise
             finally:
                 _key_locks[ki].release()
+
+    models.OpenAICompatibleProvider.chat = pooled
+    print(f"[pool] installed: {len(_keys())} keys x {len(_models())} models = {len(_slots)} slots", flush=True)
