@@ -194,3 +194,4 @@ h1,h2,h3{margin:0;letter-spacing:-.035em;line-height:1.05;font-weight:700}
 .q-track{display:flex;gap:6px;margin:16px 0 12px;flex-wrap:wrap}.q-track i{width:14px;height:14px;border-radius:5px;background:var(--line2);transition:.5s var(--ease)}
 .q-track i.you{background:var(--acc2);box-shadow:0 0 0 4px var(--acc-soft);transform:scale(1.15)}.q-track i.run{background:var(--acc);animation:pulse2 1.2s infinite}
 .q-note{margin:0;color:var(--mute);font-size:13.5px}
+.sr-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}

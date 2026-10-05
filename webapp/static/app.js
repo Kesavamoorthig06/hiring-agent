@@ -64,10 +64,12 @@
   const drop = $("drop"), fileIn = $("file");
   const pickFile = () => fileIn.click();
   drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickFile(); } });
-  drop.addEventListener("click", (e) => { e.preventDefault(); pickFile(); });
+  drop.addEventListener("click", (e) => { if (e.target === fileIn) return; pickFile(); });
+  fileIn.addEventListener("click", (e) => e.stopPropagation());
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) start(f); });
+  drop.addEventListener("drop", (e) => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) start(f); });
+  ["dragover", "drop"].forEach((ev) => addEventListener(ev, (e) => { if (!drop.contains(e.target)) e.preventDefault(); }));
   fileIn.addEventListener("change", () => { if (fileIn.files[0]) start(fileIn.files[0]); });
   $("ctaBtn").addEventListener("click", () => { $("upload").scrollIntoView({ behavior: "smooth" }); setTimeout(pickFile, 500); });
   $("brand").addEventListener("click", (e) => { e.preventDefault(); if (!$("home").hidden) window.scrollTo({ top: 0, behavior: "smooth" }); else reset(); });

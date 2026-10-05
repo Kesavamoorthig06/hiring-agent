@@ -65,15 +65,15 @@
       <h1 class="rv" style="--d:.06s">Know how your resume reads <span class="grad">before they do.</span></h1>
       <p class="lede rv" style="--d:.12s">Drop in a PDF. Get a rubric score, the fixes that matter most, line-level rewrites, and a coach you can talk to.</p>
 
-      <label id="drop" class="drop rv" style="--d:.18s" tabindex="0">
-        <input id="file" type="file" accept="application/pdf" hidden>
+      <div id="drop" class="drop rv" style="--d:.18s" tabindex="0" role="button" aria-label="Upload resume PDF">
+        <input id="file" class="sr-file" type="file" accept="application/pdf" tabindex="-1">
         <span class="drop-ic"><svg class="ic"><use href="#i-upload"/></svg></span>
         <span class="drop-txt">
           <b>Drop your resume here</b>
           <small>or <u>choose a PDF</u> · up to 5 MB</small>
         </span>
         <span class="drop-go"><svg class="ic"><use href="#i-arrow"/></svg></span>
-      </label>
+      </div>
       <p id="uploadErr" class="err" role="alert" hidden></p>
 
       <ul class="trust rv" style="--d:.24s">
