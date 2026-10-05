@@ -105,6 +105,8 @@ def install():
 
     def shim(*a, **kw):
         t0 = time.monotonic()
+        if getattr(_state, "active", False):
+            print(f"[call-start] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} model={getattr(_state, 'model', '?')}", flush=True)
         try:
             r = real_post(*a, **kw)
         except Exception as e:
@@ -112,7 +114,7 @@ def install():
                 print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} error={type(e).__name__} after {time.monotonic() - t0:.1f}s", flush=True)
             raise
         if getattr(_state, "active", False):
-            print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} status={r.status_code} in {time.monotonic() - t0:.1f}s", flush=True)
+            print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} model={getattr(_state, 'model', '?')} status={r.status_code} in {time.monotonic() - t0:.1f}s", flush=True)
             if r.status_code == 429:
                 raise PoolRateLimited("PerDay" in r.text)
             if r.status_code in (401, 403):
@@ -140,6 +142,7 @@ def install():
                 _state.active = True
                 _state.ki = ki
                 _state.stage = _stage_name()
+                _state.model = slot['model']
                 try:
                     return original(prov, slot["model"], messages, options, **kwargs)
                 finally:

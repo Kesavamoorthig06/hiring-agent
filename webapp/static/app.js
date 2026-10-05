@@ -97,8 +97,9 @@
   }
 
   const order = ["parse", "github", "score", "suggest"];
-  function setStage(stage, label) {
+  function setStage(stage, label, detail) {
     $("progLabel").textContent = label || "Working";
+    const d = $("progDetail"); d.textContent = detail || ""; d.hidden = !detail;
     const idx = order.indexOf(stage);
     document.querySelectorAll("#steps li").forEach((li) => {
       const i = order.indexOf(li.dataset.s);
@@ -127,7 +128,7 @@
       catch { continue; }
       if (j.status === "error") return fail(j.error || "Analysis failed.");
       if (j.status === "done") return render(j.result);
-      setStage(j.stage, j.label);
+      setStage(j.stage, j.label, j.detail);
     }
     fail("This is taking too long. Please try again.");
   }

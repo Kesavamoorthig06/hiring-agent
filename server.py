@@ -50,14 +50,16 @@ def _gc():
 
 
 def _run(jid: str, data: bytes):
-    def progress(stage, label):
-        jobs[jid].update(stage=stage, label=label, status="running")
-
     started = time.time()
+    def progress(stage, label, detail=None):
+        print(f"[job {jid[:8]}] +{time.time() - started:.0f}s stage={stage} {detail or ''}".rstrip(), flush=True)
+        jobs[jid].update(stage=stage, label=label, detail=detail, status="running")
+
     jobs[jid].update(status="running", stage="parse", label="Reading your resume")
     try:
         jobs[jid]["result"] = pipeline.analyze_pdf(data, progress)
         jobs[jid].update(status="done", stage="done", label="Done")
+        print(f"[job {jid[:8]}] done in {time.time() - started:.0f}s", flush=True)
         AVG_SECONDS[0] = 0.7 * AVG_SECONDS[0] + 0.3 * (time.time() - started)
     except ValueError as exc:
         msg = str(exc)
@@ -146,7 +148,7 @@ def job(jid: str):
     j = jobs.get(jid)
     if not j:
         raise HTTPException(404, "Job not found or expired")
-    out = {k: j.get(k) for k in ("status", "stage", "label", "error")}
+    out = {k: j.get(k) for k in ("status", "stage", "label", "detail", "error")}
     if j["status"] == "queued":  # the queue is internal: show the first stage
         out.update(status="running", stage="parse", label="Reading your resume")
     if j["status"] == "done":

@@ -195,3 +195,5 @@ h1,h2,h3{margin:0;letter-spacing:-.035em;line-height:1.05;font-weight:700}
 .q-track i.you{background:var(--acc2);box-shadow:0 0 0 4px var(--acc-soft);transform:scale(1.15)}.q-track i.run{background:var(--acc);animation:pulse2 1.2s infinite}
 .q-note{margin:0;color:var(--mute);font-size:13.5px}
 .sr-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
+
+.prog-detail{margin:6px 0 0;text-align:center;font-weight:600;color:var(--accent,#10b981);font-variant-numeric:tabular-nums}

@@ -84,7 +84,7 @@ def _chat_json(provider, messages, schema=None) -> dict:
     return json.loads(text)
 
 
-def _extract_resume(pdf_path: str) -> Optional[JSONResume]:
+def _extract_resume(pdf_path: str, progress=None) -> Optional[JSONResume]:
     handler = PDFHandler()
     text = handler.extract_text_from_pdf(pdf_path)
     if not text or len(text.strip()) < 40:
@@ -98,7 +98,13 @@ def _extract_resume(pdf_path: str) -> Optional[JSONResume]:
 
     # Strictly sequential: one prompt at a time, so a free-tier key is never
     # hit with parallel bursts.
-    results = dict(run(name) for name in SECTIONS)
+    results = {}
+    for i, name in enumerate(SECTIONS):
+        if progress:
+            progress("parse", "Reading your resume", f"Sections read: {i} of {len(SECTIONS)}")
+        results[name] = run(name)[1]
+    if progress:
+        progress("parse", "Reading your resume", f"Sections read: {len(SECTIONS)} of {len(SECTIONS)}")
 
     if results.get("basics") is None and results.get("work") is None:
         raise ValueError(
@@ -155,7 +161,7 @@ def analyze_pdf(pdf_bytes: bytes, progress: Progress) -> dict:
         path = fh.name
     try:
         progress("parse", "Reading your resume")
-        resume = _extract_resume(path)
+        resume = _extract_resume(path, progress)
     finally:
         try:
             os.remove(path)
