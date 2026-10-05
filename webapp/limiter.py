@@ -27,8 +27,9 @@ _key_next: dict = {}
 
 
 class PoolRateLimited(Exception):
-    def __init__(self, daily):
+    def __init__(self, daily, seconds=None):
         self.daily = daily
+        self.seconds = seconds
 
 
 def key_count():
@@ -80,8 +81,13 @@ def install():
 
     def shim(*a, **kw):
         r = real_post(*a, **kw)
-        if getattr(_state, "active", False) and r.status_code == 429:
-            raise PoolRateLimited("PerDay" in r.text)
+        if getattr(_state, "active", False):
+            if r.status_code == 429:
+                raise PoolRateLimited("PerDay" in r.text)
+            if r.status_code in (401, 403):
+                raise PoolRateLimited(True, 24 * 3600)  # bad/revoked key: park the slot
+            if r.status_code == 503:
+                raise PoolRateLimited(False, 30)  # model overloaded: try another slot
         return r
 
     requests.post = shim
@@ -108,8 +114,8 @@ def install():
                     _key_next[ki] = time.monotonic() + MIN_INTERVAL
             except PoolRateLimited as e:
                 attempts += 1
-                slot["dead_until"] = time.monotonic() + (6 * 3600 if e.daily else 70)
-                print(f"[pool] slot key#{ki} {slot['model']} cooling ({'daily' if e.daily else 'rpm'})")
+                slot["dead_until"] = time.monotonic() + (e.seconds or (6 * 3600 if e.daily else 70))
+                print(f"[pool] slot key#{ki} {slot['model']} cooling ({'daily' if e.daily else 'rpm'}, {int(e.seconds or (6*3600 if e.daily else 70))}s)")
                 if attempts > 60:
                     raise
             finally:
