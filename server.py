@@ -31,6 +31,7 @@ MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", "5")) * 1024 * 1024
 MAX_QUEUE = int(os.getenv("MAX_QUEUE", "60"))
 AVG_SECONDS = [float(os.getenv("EST_JOB_SECONDS", "120"))]
 JOB_TTL = 60 * 60
+FRIENDLY = "We could not finish this one just now. Please upload it again in a moment."
 STATIC = Path(__file__).parent / "webapp" / "static"
 
 app = FastAPI(title="Hiring Agent", docs_url=None, redoc_url=None)
@@ -59,12 +60,17 @@ def _run(jid: str, data: bytes):
         jobs[jid].update(status="done", stage="done", label="Done")
         AVG_SECONDS[0] = 0.7 * AVG_SECONDS[0] + 0.3 * (time.time() - started)
     except ValueError as exc:
-        jobs[jid].update(status="error", error=str(exc))
+        msg = str(exc)
+        low = msg.lower()
+        if any(w in low for w in ("model", "api", "key", "provider", "quota", "429", "http")):
+            log.error("pipeline value error: %s", msg)
+            msg = FRIENDLY
+        jobs[jid].update(status="error", error=msg)
     except Exception:
         log.exception("pipeline failed")
         jobs[jid].update(
             status="error",
-            error="The analysis service is busy or failed. Please try again in a minute.",
+            error=FRIENDLY,
         )
     finally:
         jobs[jid].pop("data", None)
