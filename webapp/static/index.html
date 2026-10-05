@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hiring Agent - resume feedback</title>
+<meta name="description" content="Upload your resume and get a rubric score, specific suggestions, and a chat coach.">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span>Hiring Agent</div>
+  <button id="reset" class="ghost" hidden>New resume</button>
+</header>
+
+<main>
+  <section id="upload" class="hero">
+    <p class="eyebrow">Resume review</p>
+    <h1>See your resume the way a reviewer does.</h1>
+    <p class="lede">Upload a PDF. You get a rubric score, prioritized fixes, and a chat to work through them. Your file is processed in memory and not stored.</p>
+    <label id="drop" class="drop" tabindex="0">
+      <input id="file" type="file" accept="application/pdf" hidden>
+      <span class="drop-title">Drop your resume here</span>
+      <span class="drop-sub">or <u>choose a PDF</u> &middot; up to 5 MB</span>
+    </label>
+    <p id="uploadErr" class="err" role="alert" hidden></p>
+  </section>
+
+  <section id="progress" class="hero" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <h2 id="progLabel">Starting</h2>
+    <ol class="steps" id="steps">
+      <li data-s="parse">Read resume</li>
+      <li data-s="github">Profile signals</li>
+      <li data-s="score">Score</li>
+      <li data-s="suggest">Suggestions</li>
+    </ol>
+    <p class="muted">This usually takes under a minute.</p>
+  </section>
+
+  <section id="results" class="grid" hidden>
+    <div class="col-main">
+      <div class="card summary">
+        <div class="ring" id="ring"><span id="scoreNum">0</span><small id="scoreMax"></small></div>
+        <div>
+          <h2 id="candidate"></h2>
+          <p id="headline" class="muted"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Rubric</h3>
+        <div id="cats"></div>
+        <p id="bonusLine" class="muted small"></p>
+      </div>
+
+      <div class="card">
+        <h3>What to fix first</h3>
+        <div id="prios"></div>
+      </div>
+
+      <div class="card" id="rewriteCard">
+        <h3>Line rewrites</h3>
+        <div id="rewrites"></div>
+        <p class="muted small">Placeholders like [X%] need your real numbers.</p>
+      </div>
+
+      <div class="card two">
+        <div><h3>Strengths</h3><ul id="strengths"></ul></div>
+        <div><h3>Keywords to consider</h3><div id="keywords" class="chips"></div></div>
+      </div>
+    </div>
+
+    <aside class="col-chat">
+      <div class="card chat">
+        <h3>Ask the coach</h3>
+        <div id="log" class="log" aria-live="polite"></div>
+        <div id="quick" class="chips quick"></div>
+        <form id="chatForm" autocomplete="off">
+          <input id="msg" placeholder="Ask how to improve a section" maxlength="1000">
+          <button id="send" type="submit">Send</button>
+        </form>
+      </div>
+    </aside>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
