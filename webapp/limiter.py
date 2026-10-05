@@ -19,7 +19,7 @@ import requests
 import models
 
 MIN_INTERVAL = float(os.getenv("LLM_MIN_INTERVAL", "6"))
-CALL_TIMEOUT = float(os.getenv("LLM_CALL_TIMEOUT", "30"))
+CALL_TIMEOUT = float(os.getenv("LLM_CALL_TIMEOUT", "15"))
 ACTIVE_KEYS = int(os.getenv("ACTIVE_KEYS", "10"))
 _state = threading.local()
 _installed = [False]
