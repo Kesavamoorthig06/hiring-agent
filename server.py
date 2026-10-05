@@ -38,7 +38,7 @@ jobs: dict = {}
 lock = threading.Lock()
 waiting: deque = deque()  # job ids in FIFO order
 wake = threading.Condition(lock)
-current: list = [None]
+current: set = set()
 
 
 def _gc():
@@ -76,28 +76,30 @@ def _worker():
             while not waiting:
                 wake.wait()
             jid = waiting.popleft()
-            current[0] = jid
+            current.add(jid)
         try:
             _run(jid, jobs[jid]["data"])
         except Exception:
             log.exception("worker error")
         finally:
-            current[0] = None
+            current.discard(jid)
 
 
-threading.Thread(target=_worker, name="queue-worker", daemon=True).start()
+# One worker per API key: each key still serves one prompt at a time.
+for _i in range(limiter.key_count()):
+    threading.Thread(target=_worker, name=f"queue-worker-{_i}", daemon=True).start()
 
 
 def _queue_info(jid: str) -> dict:
     with lock:
         ids = list(waiting)
         ahead = ids.index(jid) if jid in ids else 0
-        running = 1 if current[0] and current[0] != jid else 0
+        running = len(current)
         total = len(ids)
     pos = ahead + running + 1
     return {
         "position": pos,
-        "queue_size": total + (1 if current[0] else 0),
+        "queue_size": total + len(current),
         "eta_seconds": int(AVG_SECONDS[0] * (ahead + running + 1)),
     }
 
@@ -130,7 +132,7 @@ async def analyze(file: UploadFile = File(...)):
         }
         waiting.append(jid)
         wake.notify()
-    return {"job_id": jid, **_queue_info(jid)}
+    return {"job_id": jid}
 
 
 @app.get("/api/jobs/{jid}")
@@ -139,8 +141,8 @@ def job(jid: str):
     if not j:
         raise HTTPException(404, "Job not found or expired")
     out = {k: j.get(k) for k in ("status", "stage", "label", "error")}
-    if j["status"] == "queued":
-        out.update(_queue_info(jid))
+    if j["status"] == "queued":  # the queue is internal: show the first stage
+        out.update(status="running", stage="parse", label="Reading your resume")
     if j["status"] == "done":
         out["result"] = j["result"]
     return out

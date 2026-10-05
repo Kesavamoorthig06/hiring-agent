@@ -86,13 +86,12 @@
     $("uploadErr").hidden = true;
     if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") return fail("Please upload a PDF file.");
     if (file.size > 5 * 1024 * 1024) return fail("That file is over 5 MB.");
-    show("progress"); setStage("queued", "Uploading");
+    show("progress"); setStage("parse", "Reading your resume");
     const fd = new FormData(); fd.append("file", file);
     try {
       const r = await fetch("/api/analyze", { method: "POST", body: fd });
       if (!r.ok) return fail((await r.json().catch(() => ({}))).detail || "Upload failed.");
       const first = await r.json();
-      setQueue(first);
       poll(first.job_id);
     } catch { fail("Network error. Check your connection and try again."); }
   }
@@ -122,14 +121,13 @@
   }
   async function poll(id) {
     for (let n = 0; n < 1800; n++) {
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 1200));
       let j;
       try { const r = await fetch("/api/jobs/" + id); if (!r.ok) return fail("This analysis expired. Please upload again."); j = await r.json(); }
       catch { continue; }
       if (j.status === "error") return fail(j.error || "Analysis failed.");
       if (j.status === "done") return render(j.result);
-      if (j.status === "queued") { setStage("queued", "Waiting in line"); setQueue(j); }
-      else { $("queueBox").hidden = true; setStage(j.stage, j.label); }
+      setStage(j.stage, j.label);
     }
     fail("This is taking too long. Please try again.");
   }
