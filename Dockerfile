@@ -6,6 +6,6 @@ RUN pip install -r requirements.txt
 COPY . .
 RUN useradd -m app && chown -R app /app
 USER app
-ENV DEFAULT_MODEL=gemini-3.1-pro-preview PORT=8000
+ENV DEFAULT_MODEL=gemini-3.7-flash PORT=8000
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT} --workers 1"]
