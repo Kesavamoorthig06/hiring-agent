@@ -19,6 +19,7 @@ import requests
 import models
 
 MIN_INTERVAL = float(os.getenv("LLM_MIN_INTERVAL", "6"))
+CALL_TIMEOUT = float(os.getenv("LLM_CALL_TIMEOUT", "30"))
 ACTIVE_KEYS = int(os.getenv("ACTIVE_KEYS", "10"))
 _state = threading.local()
 _installed = [False]
@@ -107,11 +108,15 @@ def install():
         t0 = time.monotonic()
         if getattr(_state, "active", False):
             print(f"[call-start] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} model={getattr(_state, 'model', '?')}", flush=True)
+        if getattr(_state, "active", False):
+            kw["timeout"] = CALL_TIMEOUT  # a slow model must not hold a call for minutes
         try:
             r = real_post(*a, **kw)
         except Exception as e:
             if getattr(_state, "active", False):
                 print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} error={type(e).__name__} after {time.monotonic() - t0:.1f}s", flush=True)
+                if isinstance(e, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+                    raise PoolRateLimited(False, 30)  # fail over to the next model/key at once
             raise
         if getattr(_state, "active", False):
             print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} model={getattr(_state, 'model', '?')} status={r.status_code} in {time.monotonic() - t0:.1f}s", flush=True)
