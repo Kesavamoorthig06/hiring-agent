@@ -1,88 +1,287 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hiring Agent - resume feedback</title>
-<meta name="description" content="Upload your resume and get a rubric score, specific suggestions, and a chat coach.">
+<title>Hiring Agent - see your resume the way a reviewer does</title>
+<meta name="description" content="Upload your resume and get a rubric score, prioritized fixes, line rewrites, and a coach you can chat with.">
+<script>try{var t=localStorage.getItem("ha-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="dot"></span>Hiring Agent</div>
-  <button id="reset" class="ghost" hidden>New resume</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 3-11 5"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/><circle cx="12" cy="16" r="1"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12l15-8-5 17-3-7z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4M4 5v4h4M4 13a8 8 0 0 0 14 4M20 19v-4h-4"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 2 2 0 0 0 3-1.7V5.7A2 2 0 0 0 9 4zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 2 2 0 0 1-3-1.7"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="bg" aria-hidden="true"><i class="orb o1"></i><i class="orb o2"></i><i class="grid-bg"></i></div>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#" id="brand" aria-label="Hiring Agent home">
+    <span class="mark"><svg viewBox="0 0 24 24" class="ic"><use href="#i-scan"/></svg></span>
+    <span>Hiring Agent</span>
+  </a>
+  <nav class="links" id="links">
+    <a href="#how">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#privacy">Privacy</a>
+  </nav>
+  <div class="nav-r">
+    <button id="reset" class="btn ghost sm" hidden><svg class="ic"><use href="#i-refresh"/></svg><span>New resume</span></button>
+    <button id="theme" class="icon-btn" aria-label="Switch light or dark theme">
+      <svg class="ic sun"><use href="#i-sun"/></svg><svg class="ic moon"><use href="#i-moon"/></svg>
+    </button>
+  </div>
 </header>
 
 <main>
-  <section id="upload" class="hero">
-    <p class="eyebrow">Resume review</p>
-    <h1>See your resume the way a reviewer does.</h1>
-    <p class="lede">Upload a PDF. You get a rubric score, prioritized fixes, and a chat to work through them. Your file is processed in memory and not stored.</p>
-    <label id="drop" class="drop" tabindex="0">
-      <input id="file" type="file" accept="application/pdf" hidden>
-      <span class="drop-title">Drop your resume here</span>
-      <span class="drop-sub">or <u>choose a PDF</u> &middot; up to 5 MB</span>
-    </label>
-    <p id="uploadErr" class="err" role="alert" hidden></p>
+<!-- HOME -->
+<div id="home">
+  <section class="hero" id="upload">
+    <div class="hero-l">
+      <span class="pill rv"><i class="live"></i>Runs the open-source interviewstreet/hiring-agent pipeline</span>
+      <h1 class="rv" style="--d:.06s">Know how your resume reads <span class="grad">before they do.</span></h1>
+      <p class="lede rv" style="--d:.12s">Drop in a PDF. Get a rubric score, the fixes that matter most, line-level rewrites, and a coach you can talk to.</p>
+
+      <label id="drop" class="drop rv" style="--d:.18s" tabindex="0">
+        <input id="file" type="file" accept="application/pdf" hidden>
+        <span class="drop-ic"><svg class="ic"><use href="#i-upload"/></svg></span>
+        <span class="drop-txt">
+          <b>Drop your resume here</b>
+          <small>or <u>choose a PDF</u> · up to 5 MB</small>
+        </span>
+        <span class="drop-go"><svg class="ic"><use href="#i-arrow"/></svg></span>
+      </label>
+      <p id="uploadErr" class="err" role="alert" hidden></p>
+
+      <ul class="trust rv" style="--d:.24s">
+        <li><svg class="ic"><use href="#i-lock"/></svg>Processed in memory</li>
+        <li><svg class="ic"><use href="#i-gauge"/></svg>Scored on the real rubric</li>
+        <li><svg class="ic"><use href="#i-chat"/></svg>Chat to improve it</li>
+      </ul>
+    </div>
+
+    <div class="hero-r rv" style="--d:.2s" aria-hidden="true">
+      <div class="scene" id="scene">
+        <div class="layer doc">
+          <div class="doc-h"><i></i><div><u></u><u class="s"></u></div></div>
+          <div class="doc-b"><u></u><u></u><u class="m"></u><u></u><u class="s"></u></div>
+          <div class="doc-b"><u></u><u class="m"></u><u></u></div>
+          <div class="doc-b"><u class="m"></u><u></u><u class="s"></u><u></u></div>
+          <i class="beam"></i>
+        </div>
+        <div class="layer score-c">
+          <svg viewBox="0 0 120 120" class="mini-ring"><circle cx="60" cy="60" r="50" class="t"/><circle cx="60" cy="60" r="50" class="p"/></svg>
+          <div><small>Overall</small><b>78<em>/110</em></b></div>
+        </div>
+        <div class="layer rub-c">
+          <div class="rb"><span>Open source</span><i style="--w:72%"></i></div>
+          <div class="rb"><span>Projects</span><i style="--w:88%"></i></div>
+          <div class="rb"><span>Production</span><i style="--w:54%"></i></div>
+        </div>
+        <div class="layer tip-c"><svg class="ic"><use href="#i-spark"/></svg><span>Add measurable impact to your top project</span></div>
+      </div>
+    </div>
   </section>
 
-  <section id="progress" class="hero" hidden>
-    <div class="spinner" aria-hidden="true"></div>
-    <h2 id="progLabel">Starting</h2>
-    <ol class="steps" id="steps">
-      <li data-s="parse">Read resume</li>
-      <li data-s="github">Profile signals</li>
-      <li data-s="score">Score</li>
-      <li data-s="suggest">Suggestions</li>
+  <section class="strip" aria-label="Rubric categories">
+    <div class="marq"><div class="marq-in">
+      <span><svg class="ic"><use href="#i-git"/></svg>Open source</span>
+      <span><svg class="ic"><use href="#i-code"/></svg>Self projects</span>
+      <span><svg class="ic"><use href="#i-box"/></svg>Production experience</span>
+      <span><svg class="ic"><use href="#i-wrench"/></svg>Technical skills</span>
+      <span><svg class="ic"><use href="#i-brain"/></svg>AI fluency</span>
+      <span><svg class="ic"><use href="#i-git"/></svg>Open source</span>
+      <span><svg class="ic"><use href="#i-code"/></svg>Self projects</span>
+      <span><svg class="ic"><use href="#i-box"/></svg>Production experience</span>
+      <span><svg class="ic"><use href="#i-wrench"/></svg>Technical skills</span>
+      <span><svg class="ic"><use href="#i-brain"/></svg>AI fluency</span>
+    </div></div>
+  </section>
+
+  <section class="how" id="how">
+    <div class="how-l">
+      <p class="eyebrow rv">How it works</p>
+      <h2 class="rv">From PDF to a plan, in four steps.</h2>
+      <p class="sub rv">The same pipeline the open-source project uses, wrapped so you can run it on your own resume.</p>
+      <div class="rail" aria-hidden="true"><i id="railFill"></i></div>
+    </div>
+    <ol class="how-r" id="steps-how">
+      <li class="step"><span class="n">01</span><div class="si"><svg class="ic"><use href="#i-file"/></svg></div><div><h3>Read</h3><p>Your PDF becomes clean text, then each section (work, projects, skills, education) is parsed on its own.</p></div></li>
+      <li class="step"><span class="n">02</span><div class="si"><svg class="ic"><use href="#i-git"/></svg></div><div><h3>Check signals</h3><p>If your resume links a GitHub profile, public activity is pulled in as supporting evidence.</p></div></li>
+      <li class="step"><span class="n">03</span><div class="si"><svg class="ic"><use href="#i-gauge"/></svg></div><div><h3>Score</h3><p>Five rubric categories, with evidence for each score, plus bonus points and deductions.</p></div></li>
+      <li class="step"><span class="n">04</span><div class="si"><svg class="ic"><use href="#i-spark"/></svg></div><div><h3>Improve</h3><p>Gemini turns the findings into prioritized fixes and rewrites. Then you chat to work through them.</p></div></li>
     </ol>
-    <p class="muted">This usually takes under a minute.</p>
   </section>
 
-  <section id="results" class="grid" hidden>
-    <div class="col-main">
-      <div class="card summary">
-        <div class="ring" id="ring"><span id="scoreNum">0</span><small id="scoreMax"></small></div>
-        <div>
-          <h2 id="candidate"></h2>
+  <section class="feat" id="features">
+    <p class="eyebrow rv">Features</p>
+    <h2 class="rv">Everything you need to act on the feedback.</h2>
+    <div class="bento">
+      <article class="tile t-score rv spot">
+        <div class="tile-h"><svg class="ic"><use href="#i-gauge"/></svg><h3>Rubric score</h3></div>
+        <p>A transparent score out of 110, with a written reason behind every category.</p>
+        <div class="demo-bars">
+          <div class="rb"><span>Open source</span><i style="--w:72%"></i></div>
+          <div class="rb"><span>Self projects</span><i style="--w:88%"></i></div>
+          <div class="rb"><span>Production</span><i style="--w:54%"></i></div>
+          <div class="rb"><span>Technical skills</span><i style="--w:90%"></i></div>
+        </div>
+      </article>
+      <article class="tile t-prio rv spot" style="--d:.06s">
+        <div class="tile-h"><svg class="ic"><use href="#i-alert"/></svg><h3>What to fix first</h3></div>
+        <p>Ranked by impact, with the why and the how.</p>
+        <div class="demo-list">
+          <div><b>Quantify project outcomes</b><span class="tag high">High</span></div>
+          <div><b>Link a public repo</b><span class="tag medium">Medium</span></div>
+          <div><b>Tighten the summary</b><span class="tag low">Low</span></div>
+        </div>
+      </article>
+      <article class="tile t-rw rv spot" style="--d:.1s">
+        <div class="tile-h"><svg class="ic"><use href="#i-spark"/></svg><h3>Line rewrites</h3></div>
+        <div class="diff"><s>Worked on the backend of a web app.</s><b>Built a FastAPI backend serving 20+ concurrent users with async job queues.</b></div>
+      </article>
+      <article class="tile t-chat rv spot" style="--d:.14s">
+        <div class="tile-h"><svg class="ic"><use href="#i-chat"/></svg><h3>Coach chat</h3></div>
+        <div class="bub me">How do I show more open source work?</div>
+        <div class="bub bot">Pick one repo you use daily, fix a small bug, and link the merged PR under Projects.</div>
+      </article>
+      <article class="tile t-priv rv spot" id="privacy" style="--d:.18s">
+        <div class="tile-h"><svg class="ic"><use href="#i-lock"/></svg><h3>Private by default</h3></div>
+        <p>Your PDF is processed in memory and never written to disk. Results expire after an hour.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="cta rv">
+    <h2>Ready to see your score?</h2>
+    <p>It takes about a minute.</p>
+    <button class="btn primary lg" id="ctaBtn"><span>Upload your resume</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+  </section>
+
+  <footer class="foot">
+    <span>Hiring Agent</span>
+    <a href="https://github.com/interviewstreet/hiring-agent" target="_blank" rel="noopener">Built on interviewstreet/hiring-agent</a>
+  </footer>
+</div>
+
+<!-- PROGRESS -->
+<section id="progress" class="prog" hidden>
+  <div class="prog-card">
+    <div class="scanner">
+      <div class="layer doc small">
+        <div class="doc-h"><i></i><div><u></u><u class="s"></u></div></div>
+        <div class="doc-b"><u></u><u></u><u class="m"></u></div>
+        <div class="doc-b"><u></u><u class="m"></u><u></u></div>
+        <div class="doc-b"><u class="m"></u><u></u><u class="s"></u></div>
+        <i class="beam"></i>
+      </div>
+      <i class="ring r1"></i><i class="ring r2"></i>
+    </div>
+    <h2 id="progLabel">Starting</h2>
+    <div class="queue" id="queueBox" hidden>
+      <div class="q-top">
+        <div class="q-pos"><small>Your place in line</small><b id="qPos">1</b></div>
+        <div class="q-eta"><small>Estimated wait</small><b id="qEta">-</b></div>
+      </div>
+      <div class="q-track" aria-hidden="true" id="qTrack"></div>
+      <p class="q-note" id="qNote">Resumes are processed one at a time so every upload finishes. You can keep this tab open.</p>
+    </div>
+    <ol class="steps" id="steps">
+      <li data-s="parse"><span class="dotc"><svg class="ic"><use href="#i-check"/></svg></span>Read resume</li>
+      <li data-s="github"><span class="dotc"><svg class="ic"><use href="#i-check"/></svg></span>Profile signals</li>
+      <li data-s="score"><span class="dotc"><svg class="ic"><use href="#i-check"/></svg></span>Score against rubric</li>
+      <li data-s="suggest"><span class="dotc"><svg class="ic"><use href="#i-check"/></svg></span>Write suggestions</li>
+    </ol>
+    <p class="muted">Usually under a minute. If many people are uploading, you wait in a queue instead of seeing an error.</p>
+  </div>
+</section>
+
+<!-- RESULTS -->
+<section id="results" class="res" hidden>
+  <div class="res-grid">
+    <div class="res-main">
+      <div class="card score-card rv">
+        <div class="ring-wrap">
+          <svg viewBox="0 0 140 140" class="big-ring">
+            <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#059669"/></linearGradient></defs>
+            <circle cx="70" cy="70" r="60" class="t"/>
+            <circle cx="70" cy="70" r="60" class="p" id="ringP"/>
+          </svg>
+          <div class="ring-n"><b id="scoreNum">0</b><small id="scoreMax"></small></div>
+        </div>
+        <div class="score-t">
+          <p class="eyebrow" id="tier">Overall</p>
+          <h1 id="candidate"></h1>
           <p id="headline" class="muted"></p>
+          <div class="stats" id="stats"></div>
         </div>
       </div>
 
-      <div class="card">
-        <h3>Rubric</h3>
-        <div id="cats"></div>
-        <p id="bonusLine" class="muted small"></p>
+      <div class="card rv">
+        <div class="card-h"><svg class="ic"><use href="#i-gauge"/></svg><h3>Rubric</h3></div>
+        <div id="cats" class="cats"></div>
       </div>
 
-      <div class="card">
-        <h3>What to fix first</h3>
-        <div id="prios"></div>
+      <div class="card rv">
+        <div class="card-h"><svg class="ic"><use href="#i-alert"/></svg><h3>What to fix first</h3></div>
+        <div id="prios" class="prios"></div>
       </div>
 
-      <div class="card" id="rewriteCard">
-        <h3>Line rewrites</h3>
-        <div id="rewrites"></div>
+      <div class="card rv" id="rewriteCard">
+        <div class="card-h"><svg class="ic"><use href="#i-spark"/></svg><h3>Line rewrites</h3></div>
+        <div id="rewrites" class="rws"></div>
         <p class="muted small">Placeholders like [X%] need your real numbers.</p>
       </div>
 
-      <div class="card two">
-        <div><h3>Strengths</h3><ul id="strengths"></ul></div>
-        <div><h3>Keywords to consider</h3><div id="keywords" class="chips"></div></div>
+      <div class="two">
+        <div class="card rv">
+          <div class="card-h"><svg class="ic"><use href="#i-check"/></svg><h3>Strengths</h3></div>
+          <ul id="strengths" class="ticks"></ul>
+        </div>
+        <div class="card rv">
+          <div class="card-h"><svg class="ic"><use href="#i-code"/></svg><h3>Keywords to consider</h3></div>
+          <div id="keywords" class="chips"></div>
+        </div>
       </div>
     </div>
 
-    <aside class="col-chat">
+    <aside class="res-chat" id="chatCol">
       <div class="card chat">
-        <h3>Ask the coach</h3>
+        <div class="chat-h"><span class="av"><svg class="ic"><use href="#i-spark"/></svg></span><div><b>Resume coach</b><small>Knows your resume and score</small></div></div>
         <div id="log" class="log" aria-live="polite"></div>
         <div id="quick" class="chips quick"></div>
         <form id="chatForm" autocomplete="off">
-          <input id="msg" placeholder="Ask how to improve a section" maxlength="1000">
-          <button id="send" type="submit">Send</button>
+          <input id="msg" placeholder="Ask how to improve a section" maxlength="1000" aria-label="Message">
+          <button id="send" type="submit" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>
         </form>
       </div>
     </aside>
-  </section>
+  </div>
+  <button class="fab" id="fab" hidden><svg class="ic"><use href="#i-chat"/></svg><span>Ask the coach</span></button>
+</section>
 </main>
 <script src="/static/app.js"></script>
 </body>

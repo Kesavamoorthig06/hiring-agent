@@ -1,8 +1,9 @@
 """Web server: resume upload, pipeline jobs, and a coaching chat.
 
-Jobs are held in memory with a TTL. A bounded worker pool keeps LLM calls and
-memory in check when many people upload at once; extra uploads wait in a queue
-and the client sees their position.
+Jobs are held in memory with a TTL. Resumes are processed strictly one at a
+time (and each resume's LLM prompts run one after another), so a free-tier API
+key is never overloaded. Extra uploads wait in a FIFO queue; the client sees
+its live position and an estimated wait.
 """
 
 import logging
@@ -10,7 +11,7 @@ import os
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 from pathlib import Path
 from typing import List, Optional
 
@@ -19,21 +20,25 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from webapp import pipeline
+from webapp import limiter, pipeline
+
+limiter.install()
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("hiring-agent")
 
 MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", "5")) * 1024 * 1024
-WORKERS = int(os.getenv("PIPELINE_WORKERS", "24"))
+MAX_QUEUE = int(os.getenv("MAX_QUEUE", "60"))
+AVG_SECONDS = [float(os.getenv("EST_JOB_SECONDS", "120"))]
 JOB_TTL = 60 * 60
 STATIC = Path(__file__).parent / "webapp" / "static"
 
 app = FastAPI(title="Hiring Agent", docs_url=None, redoc_url=None)
-pool = ThreadPoolExecutor(max_workers=WORKERS)
-chat_pool = ThreadPoolExecutor(max_workers=WORKERS)
 jobs: dict = {}
 lock = threading.Lock()
+waiting: deque = deque()  # job ids in FIFO order
+wake = threading.Condition(lock)
+current: list = [None]
 
 
 def _gc():
@@ -47,17 +52,54 @@ def _run(jid: str, data: bytes):
     def progress(stage, label):
         jobs[jid].update(stage=stage, label=label, status="running")
 
+    started = time.time()
+    jobs[jid].update(status="running", stage="parse", label="Reading your resume")
     try:
         jobs[jid]["result"] = pipeline.analyze_pdf(data, progress)
         jobs[jid].update(status="done", stage="done", label="Done")
+        AVG_SECONDS[0] = 0.7 * AVG_SECONDS[0] + 0.3 * (time.time() - started)
     except ValueError as exc:
         jobs[jid].update(status="error", error=str(exc))
-    except Exception as exc:
+    except Exception:
         log.exception("pipeline failed")
         jobs[jid].update(
             status="error",
             error="The analysis service is busy or failed. Please try again in a minute.",
         )
+    finally:
+        jobs[jid].pop("data", None)
+
+
+def _worker():
+    while True:
+        with wake:
+            while not waiting:
+                wake.wait()
+            jid = waiting.popleft()
+            current[0] = jid
+        try:
+            _run(jid, jobs[jid]["data"])
+        except Exception:
+            log.exception("worker error")
+        finally:
+            current[0] = None
+
+
+threading.Thread(target=_worker, name="queue-worker", daemon=True).start()
+
+
+def _queue_info(jid: str) -> dict:
+    with lock:
+        ids = list(waiting)
+        ahead = ids.index(jid) if jid in ids else 0
+        running = 1 if current[0] and current[0] != jid else 0
+        total = len(ids)
+    pos = ahead + running + 1
+    return {
+        "position": pos,
+        "queue_size": total + (1 if current[0] else 0),
+        "eta_seconds": int(AVG_SECONDS[0] * (ahead + running + 1)),
+    }
 
 
 @app.get("/healthz")
@@ -75,15 +117,20 @@ async def analyze(file: UploadFile = File(...)):
         )
     if not data.startswith(b"%PDF"):
         raise HTTPException(400, "Please upload a PDF file")
-    jid = uuid.uuid4().hex
-    jobs[jid] = {
-        "created": time.time(),
-        "status": "queued",
-        "stage": "queued",
-        "label": "Waiting for a free worker",
-    }
-    pool.submit(_run, jid, data)
-    return {"job_id": jid}
+    with wake:
+        if len(waiting) >= MAX_QUEUE:
+            raise HTTPException(503, "The queue is full right now. Please try again shortly.")
+        jid = uuid.uuid4().hex
+        jobs[jid] = {
+            "created": time.time(),
+            "status": "queued",
+            "stage": "queued",
+            "label": "Waiting in line",
+            "data": data,
+        }
+        waiting.append(jid)
+        wake.notify()
+    return {"job_id": jid, **_queue_info(jid)}
 
 
 @app.get("/api/jobs/{jid}")
@@ -92,6 +139,8 @@ def job(jid: str):
     if not j:
         raise HTTPException(404, "Job not found or expired")
     out = {k: j.get(k) for k in ("status", "stage", "label", "error")}
+    if j["status"] == "queued":
+        out.update(_queue_info(jid))
     if j["status"] == "done":
         out["result"] = j["result"]
     return out
@@ -109,13 +158,9 @@ def chat(body: ChatIn):
     if not body.messages or body.messages[-1].get("role") != "user":
         raise HTTPException(400, "Last message must be from the user")
     try:
-        reply = chat_pool.submit(
-            pipeline.chat_reply,
-            body.messages,
-            body.resume_text,
-            body.evaluation,
-            body.suggestions,
-        ).result(timeout=120)
+        reply = pipeline.chat_reply(
+            body.messages, body.resume_text, body.evaluation, body.suggestions
+        )
     except Exception:
         log.exception("chat failed")
         raise HTTPException(502, "The coach is busy. Try again in a moment.")

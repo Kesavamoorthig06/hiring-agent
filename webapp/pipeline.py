@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -97,8 +96,9 @@ def _extract_resume(pdf_path: str) -> Optional[JSONResume]:
             data = handler._extract_section_data(text, name)
         return name, data
 
-    with ThreadPoolExecutor(max_workers=len(SECTIONS)) as pool:
-        results = dict(pool.map(run, SECTIONS))
+    # Strictly sequential: one prompt at a time, so a free-tier key is never
+    # hit with parallel bursts.
+    results = dict(run(name) for name in SECTIONS)
 
     if results.get("basics") is None and results.get("work") is None:
         raise ValueError(

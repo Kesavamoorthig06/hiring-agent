@@ -1,23 +1,84 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const show = (id) => ["upload", "progress", "results"].forEach((s) => ($(s).hidden = s !== id));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let state = null, history = [], busy = false;
 
+  /* ---------- theme ---------- */
+  $("theme").addEventListener("click", () => {
+    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem("ha-theme", t); } catch (e) {}
+  });
+
+  /* ---------- views ---------- */
+  const views = { home: $("home"), progress: $("progress"), results: $("results") };
+  function show(name) {
+    Object.entries(views).forEach(([k, el]) => (el.hidden = k !== name));
+    $("links").hidden = name !== "home";
+    $("reset").hidden = name !== "results";
+    $("fab").hidden = name !== "results";
+    window.scrollTo({ top: 0 });
+    observeReveals();
+  }
+
+  /* ---------- reveal on scroll ---------- */
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.12 });
+  function observeReveals() {
+    document.querySelectorAll(".rv:not(.in)").forEach((el) => { if (!el.closest("[hidden]")) io.observe(el); });
+  }
+  observeReveals();
+
+  /* ---------- hero tilt + tile spotlight ---------- */
+  const scene = $("scene");
+  if (scene && !reduce) {
+    const host = scene.parentElement;
+    host.addEventListener("pointermove", (e) => {
+      const r = host.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      scene.style.setProperty("--ry", (-14 + x * 22).toFixed(1) + "deg");
+      scene.style.setProperty("--rx", (8 - y * 18).toFixed(1) + "deg");
+    });
+    host.addEventListener("pointerleave", () => { scene.style.removeProperty("--ry"); scene.style.removeProperty("--rx"); });
+  }
+  document.querySelectorAll(".spot").forEach((t) => t.addEventListener("pointermove", (e) => {
+    const r = t.getBoundingClientRect();
+    t.style.setProperty("--mx", e.clientX - r.left + "px"); t.style.setProperty("--my", e.clientY - r.top + "px");
+  }));
+
+  /* ---------- scroll-driven "how it works" ---------- */
+  const stepEls = [...document.querySelectorAll(".step")];
+  function onScroll() {
+    if ($("home").hidden || !stepEls.length) return;
+    const mid = innerHeight * 0.55;
+    let act = -1;
+    stepEls.forEach((s, i) => { if (s.getBoundingClientRect().top < mid) act = i; });
+    stepEls.forEach((s, i) => s.classList.toggle("on", i <= act && i === act));
+    const first = stepEls[0].getBoundingClientRect().top, last = stepEls[stepEls.length - 1].getBoundingClientRect().bottom;
+    const p = Math.min(1, Math.max(0, (mid - first) / Math.max(1, last - first)));
+    $("railFill").parentElement.style.setProperty("--p", p); $("railFill").style.setProperty("--p", p);
+  }
+  addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+  /* ---------- upload ---------- */
   const drop = $("drop"), fileIn = $("file");
-  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileIn.click(); } });
-  drop.addEventListener("click", (e) => { e.preventDefault(); fileIn.click(); });
+  const pickFile = () => fileIn.click();
+  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickFile(); } });
+  drop.addEventListener("click", (e) => { e.preventDefault(); pickFile(); });
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) start(f); });
   fileIn.addEventListener("change", () => { if (fileIn.files[0]) start(fileIn.files[0]); });
+  $("ctaBtn").addEventListener("click", () => { $("upload").scrollIntoView({ behavior: "smooth" }); setTimeout(pickFile, 500); });
+  $("brand").addEventListener("click", (e) => { e.preventDefault(); if (!$("home").hidden) window.scrollTo({ top: 0, behavior: "smooth" }); else reset(); });
   $("reset").addEventListener("click", reset);
+  $("fab").addEventListener("click", () => $("chatCol").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   function reset() {
-    state = null; history = []; fileIn.value = ""; $("uploadErr").hidden = true;
-    $("reset").hidden = true; $("log").innerHTML = ""; show("upload");
+    state = null; history = []; fileIn.value = ""; $("uploadErr").hidden = true; $("log").innerHTML = "";
+    $("ringP").style.strokeDashoffset = 377; show("home");
   }
-  function fail(msg) { show("upload"); const e = $("uploadErr"); e.textContent = msg; e.hidden = false; fileIn.value = ""; }
+  function fail(msg) { show("home"); const e = $("uploadErr"); e.textContent = msg; e.hidden = false; fileIn.value = ""; }
 
   async function start(file) {
     $("uploadErr").hidden = true;
@@ -28,7 +89,9 @@
     try {
       const r = await fetch("/api/analyze", { method: "POST", body: fd });
       if (!r.ok) return fail((await r.json().catch(() => ({}))).detail || "Upload failed.");
-      poll((await r.json()).job_id);
+      const first = await r.json();
+      setQueue(first);
+      poll(first.job_id);
     } catch { fail("Network error. Check your connection and try again."); }
   }
 
@@ -41,47 +104,79 @@
       li.className = idx === -1 ? "" : i < idx ? "done" : i === idx ? "on" : "";
     });
   }
+  function fmtEta(s) {
+    if (s < 45) return "under a minute";
+    const m = Math.round(s / 60); return m < 60 ? "~" + m + " min" : "~" + Math.floor(m / 60) + " h " + (m % 60) + " min";
+  }
+  function setQueue(q) {
+    const box = $("queueBox");
+    if (!q || !q.position) { box.hidden = true; return; }
+    box.hidden = false;
+    $("qPos").textContent = "#" + q.position;
+    $("qEta").textContent = fmtEta(q.eta_seconds);
+    const n = Math.min(q.queue_size || q.position, 24);
+    $("qTrack").innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i === 0 ? "run" : ""} ${i + 1 === Math.min(q.position, n) ? "you" : ""}"></i>`).join("");
+    $("progLabel").textContent = q.position === 1 ? "You are next" : (q.position - 1) + " ahead of you";
+  }
   async function poll(id) {
-    for (let n = 0; n < 400; n++) {
-      await new Promise((r) => setTimeout(r, 1500));
+    for (let n = 0; n < 1800; n++) {
+      await new Promise((r) => setTimeout(r, 2000));
       let j;
       try { const r = await fetch("/api/jobs/" + id); if (!r.ok) return fail("This analysis expired. Please upload again."); j = await r.json(); }
       catch { continue; }
       if (j.status === "error") return fail(j.error || "Analysis failed.");
       if (j.status === "done") return render(j.result);
-      setStage(j.stage, j.label);
+      if (j.status === "queued") { setStage("queued", "Waiting in line"); setQueue(j); }
+      else { $("queueBox").hidden = true; setStage(j.stage, j.label); }
     }
     fail("This is taking too long. Please try again.");
   }
 
+  /* ---------- results ---------- */
+  const CAT_ICON = { open_source: "i-git", self_projects: "i-code", production: "i-box", technical_skills: "i-wrench", ai_fluency: "i-brain" };
+  const icon = (id) => `<svg class="ic"><use href="#${id}"/></svg>`;
+  function countUp(el, to) {
+    if (reduce) { el.textContent = Math.round(to); return; }
+    const t0 = performance.now();
+    (function f(t) { const p = Math.min(1, (t - t0) / 1600); el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(f); })(t0);
+  }
+  function tierOf(p) { return p >= 0.8 ? "Standout" : p >= 0.6 ? "Strong" : p >= 0.4 ? "Solid base" : p >= 0.2 ? "Early stage" : "Just starting"; }
+
   function render(res) {
     state = res; history = [];
     const ev = res.evaluation, sg = res.suggestions;
+    const pct = Math.min(1, ev.total / ev.max);
     $("candidate").textContent = res.candidate;
     $("headline").textContent = sg.headline;
-    $("scoreNum").textContent = Math.round(ev.total);
+    $("tier").textContent = tierOf(pct);
     $("scoreMax").textContent = "of " + ev.max;
-    $("ring").style.setProperty("--p", Math.min(100, (ev.total / ev.max) * 100));
+    const stats = [];
+    if (ev.bonus) stats.push(`<span class="stat g">Bonus +${esc(ev.bonus)}</span>`);
+    if (ev.deductions) stats.push(`<span class="stat r" title="${esc(ev.deduction_reasons || "")}">Deductions -${esc(ev.deductions)}</span>`);
+    $("stats").innerHTML = stats.join("");
     $("cats").innerHTML = ev.categories.map((c) =>
-      `<div class="cat"><div class="cat-h"><span>${esc(c.label)}</span><span>${c.score}/${c.max}</span></div>
-       <div class="bar"><i style="width:${(c.score / c.max) * 100}%"></i></div><p>${esc(c.evidence)}</p></div>`).join("");
-    const bits = [];
-    if (ev.bonus) bits.push("Bonus +" + ev.bonus);
-    if (ev.deductions) bits.push("Deductions -" + ev.deductions + (ev.deduction_reasons ? " (" + ev.deduction_reasons + ")" : ""));
-    $("bonusLine").textContent = bits.join(" · ");
-    $("prios").innerHTML = sg.priorities.map((p) =>
-      `<div class="prio"><div class="prio-h"><b>${esc(p.title)}</b><span class="tag ${esc(p.impact.toLowerCase())}">${esc(p.impact)}</span><span class="muted small">${esc(p.section)}</span></div>
-       <p>${esc(p.why)}</p><p class="how">${esc(p.how)}</p></div>`).join("");
+      `<div class="cat"><div class="cat-h"><span>${icon(CAT_ICON[c.key] || "i-gauge")}${esc(c.label)}</span><em>${esc(c.score)}/${esc(c.max)}</em></div>
+       <div class="bar"><i data-w="${(c.score / c.max) * 100}"></i></div><p>${esc(c.evidence)}</p></div>`).join("");
+    $("prios").innerHTML = sg.priorities.map((p, i) =>
+      `<div class="prio"><span class="num">${String(i + 1).padStart(2, "0")}</span><div><div class="prio-h"><b>${esc(p.title)}</b><span class="tag ${esc(String(p.impact).toLowerCase())}">${esc(p.impact)}</span><span class="muted small">${esc(p.section)}</span></div>
+       <p>${esc(p.why)}</p><p class="fix">${esc(p.how)}</p></div></div>`).join("");
     $("rewriteCard").hidden = !sg.rewrites.length;
     $("rewrites").innerHTML = sg.rewrites.map((r) => `<div class="rw"><div class="b">${esc(r.before)}</div><div class="a">${esc(r.after)}</div></div>`).join("");
     $("strengths").innerHTML = ev.strengths.map((s) => `<li>${esc(s)}</li>`).join("");
     $("keywords").innerHTML = sg.missing_keywords.map((k) => `<span class="chip">${esc(k)}</span>`).join("") || '<span class="muted small">None flagged</span>';
     $("quick").innerHTML = ["What should I fix first?", "Rewrite my top project", "How do I get more open source signal?"]
       .map((q) => `<button type="button" class="chip">${q}</button>`).join("");
+    $("quick").hidden = false;
     $("quick").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
     $("log").innerHTML = "";
     bot(`Hi ${res.candidate.split(" ")[0]}. Your score is ${Math.round(ev.total)} out of ${ev.max}. Ask me about any section, or tap a prompt below.`, false);
-    $("reset").hidden = false; show("results"); window.scrollTo({ top: 0 });
+    show("results");
+    setTimeout(() => {
+      $("ringP").style.strokeDashoffset = 377 * (1 - pct);
+      countUp($("scoreNum"), ev.total);
+      document.querySelectorAll("#cats .bar i").forEach((b) => (b.style.width = b.dataset.w + "%"));
+    }, 150);
+    setTimeout(() => { $("scoreNum").textContent = Math.round(ev.total); }, 2200);
   }
 
   function bot(text, record = true) {
@@ -92,6 +187,7 @@
     if (busy || !state || !text.trim()) return;
     busy = true; $("send").disabled = true; $("quick").hidden = true;
     const me = document.createElement("div"); me.className = "m me"; me.textContent = text; $("log").appendChild(me);
+    $("log").scrollTop = $("log").scrollHeight;
     history.push({ role: "user", content: text });
     const t = bot("Thinking…", false); t.classList.add("typing");
     try {
@@ -102,7 +198,7 @@
       if (!r.ok) { history.pop(); bot(j.detail || "Something went wrong. Try again.", false); }
       else bot(j.reply);
     } catch { t.remove(); history.pop(); bot("Network error. Try again.", false); }
-    busy = false; $("send").disabled = false; $("msg").focus();
+    busy = false; $("send").disabled = false; $("msg").focus({ preventScroll: true });
   }
   $("chatForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("msg").value; $("msg").value = ""; ask(v); });
 })();
