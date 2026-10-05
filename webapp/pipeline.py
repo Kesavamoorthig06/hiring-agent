@@ -101,7 +101,9 @@ def _extract_resume(pdf_path: str) -> Optional[JSONResume]:
         results = dict(pool.map(run, SECTIONS))
 
     if results.get("basics") is None and results.get("work") is None:
-        return None
+        raise ValueError(
+            "The AI model could not parse this resume right now. Please try again in a moment."
+        )
     merged: Dict = {
         k: None
         for k in (
