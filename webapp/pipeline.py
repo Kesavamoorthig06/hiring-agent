@@ -84,7 +84,7 @@ def _chat_json(provider, messages, schema=None) -> dict:
     return json.loads(text)
 
 
-def _extract_resume(pdf_path: str, progress=None) -> Optional[JSONResume]:
+def _extract_resume(pdf_path: str, progress=None, role=None, gh_box=None) -> Optional[JSONResume]:
     handler = PDFHandler()
     text = handler.extract_text_from_pdf(pdf_path)
     if not text or len(text.strip()) < 40:
@@ -104,15 +104,26 @@ def _extract_resume(pdf_path: str, progress=None) -> Optional[JSONResume]:
     done_n = 0
     if progress:
         progress("parse", "Reading your resume", f"Sections read: 0 of {len(SECTIONS)}")
-    with ThreadPoolExecutor(max_workers=len(SECTIONS)) as ex:
+    with ThreadPoolExecutor(max_workers=len(SECTIONS) + 1) as ex:
         futs = {ex.submit(run, name): name for name in SECTIONS}
+        gh_fut = None
         for fut in as_completed(futs):
             name, data = fut.result()
             results[name] = data
+            # The GitHub link lives in basics, so the profile fetch starts as soon
+            # as basics is read, while the other sections are still running.
+            if name == "basics" and role is not None and gh_box is not None and data:
+                try:
+                    b = Basics(**data["basics"]) if isinstance(data.get("basics"), dict) else None
+                    gh_fut = ex.submit(_github_data, JSONResume(basics=b), role)
+                except Exception:
+                    gh_fut = None
             done_n += 1
             if progress:
                 progress("parse", "Reading your resume", f"Sections read: {done_n} of {len(SECTIONS)}")
 
+    if gh_box is not None and gh_fut is not None:
+        gh_box["data"] = gh_fut.result()
     if results.get("basics") is None and results.get("work") is None:
         raise ValueError(
             "The AI model could not parse this resume right now. Please try again in a moment."
@@ -168,7 +179,8 @@ def analyze_pdf(pdf_bytes: bytes, progress: Progress) -> dict:
         path = fh.name
     try:
         progress("parse", "Reading your resume")
-        resume = _extract_resume(path, progress)
+        gh_box = {}
+        resume = _extract_resume(path, progress, role, gh_box)
     finally:
         try:
             os.remove(path)
@@ -180,7 +192,7 @@ def analyze_pdf(pdf_bytes: bytes, progress: Progress) -> dict:
         )
 
     progress("github", "Checking public profile signals")
-    github = _github_data(resume, role)
+    github = gh_box["data"] if "data" in gh_box else _github_data(resume, role)
 
     progress("score", "Scoring against the rubric")
     evaluation_model = build_evaluation_model(role)
