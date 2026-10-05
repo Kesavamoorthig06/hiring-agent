@@ -18,6 +18,7 @@ import requests
 import models
 
 MIN_INTERVAL = float(os.getenv("LLM_MIN_INTERVAL", "6"))
+ACTIVE_KEYS = int(os.getenv("ACTIVE_KEYS", "10"))
 _state = threading.local()
 _installed = [False]
 _mu = threading.Lock()
@@ -61,6 +62,16 @@ def _pick():
         now = time.monotonic()
         with _mu:
             alive = [s for s in _slots if s["dead_until"] <= now]
+            # Active set = the first ACTIVE_KEYS keys that are not daily-parked.
+            # Keys past that stay in reserve and are promoted one by one as
+            # active keys run out of daily quota. Within the active set the
+            # least recently used key goes next, so load spreads evenly.
+            usable = []
+            for ki in sorted(_key_locks):
+                if any(x["ki"] == ki and x["dead_until"] - now < 1800 for x in _slots):
+                    usable.append(ki)
+            active = set(usable[:ACTIVE_KEYS])
+            alive = [s for s in alive if s["ki"] in active]
             if not alive:
                 soonest = min((s["dead_until"] for s in _slots), default=now) - now
             else:
@@ -122,4 +133,4 @@ def install():
                 _key_locks[ki].release()
 
     models.OpenAICompatibleProvider.chat = pooled
-    print(f"[pool] installed: {len(_keys())} keys x {len(_models())} models = {len(_slots)} slots", flush=True)
+    print(f"[pool] installed: {len(_keys())} keys x {len(_models())} models = {len(_slots)} slots, active {min(ACTIVE_KEYS, len(_keys()))} + reserve {max(0, len(_keys()) - ACTIVE_KEYS)}", flush=True)
