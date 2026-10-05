@@ -68,3 +68,5 @@ button{font:inherit;cursor:pointer}
 .ghost:hover{border-color:var(--accent)}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.col-chat{position:static}.chat{height:560px}}
 @media(max-width:560px){.two{grid-template-columns:1fr}.summary{flex-direction:column;align-items:flex-start}.card{padding:18px}.hero{margin-top:3vh}}
+
+[hidden]{display:none !important}
