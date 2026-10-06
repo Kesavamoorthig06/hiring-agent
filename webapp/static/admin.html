@@ -32,6 +32,9 @@
   <div class="st"><i class="dot" id="dot"></i><span id="stTxt">Checking</span></div>
   <div class="st" id="stMeta" hidden></div>
   <form id="credForm" autocomplete="off">
+    <label for="blk">Paste the whole credentials block</label>
+    <textarea id="blk" rows="4" spellcheck="false" autocomplete="off" placeholder="aws_access_key_id=...&#10;aws_secret_access_key=...&#10;aws_session_token=..."></textarea>
+    <div class="msg" id="blkMsg" role="status"></div>
     <label for="ak">Access key ID</label><input id="ak" type="password" autocomplete="off" required>
     <label for="sk">Secret access key</label><input id="sk" type="password" autocomplete="off" required>
     <label for="tk">Session token</label><input id="tk" type="password" autocomplete="off">

@@ -48,4 +48,33 @@
     const r = await api("clear", {}); if (r.status === 404) return refresh(); paint(r.j); say("Cleared.", "good");
   });
   refresh();
+
+  // Parse a pasted credentials block (env exports, credentials file, JSON, plain key=value) into the fields.
+  const KEYS = {
+    ak: /^(aws_?)?access_?key(_?id)?$/i,
+    sk: /^(aws_?)?secret(_?access)?_?key$/i,
+    tk: /^(aws_?)?session_?token$/i,
+    rg: /^(aws_?)?(default_?)?region$/i,
+    md: /^(bedrock_?|claude_?)?model(_?id)?$/i,
+  };
+  function parseBlock(text) {
+    const out = {};
+    const re = /(?:^|[\s,{;])(?:export\s+|set\s+|\$Env:)?["']?([A-Za-z_][A-Za-z0-9_]*)["']?\s*[=:]\s*["']?([^\s"',;]+)/gm;
+    let m;
+    while ((m = re.exec(text))) {
+      for (const k in KEYS) if (KEYS[k].test(m[1]) && !(k in out)) out[k] = m[2];
+    }
+    return out;
+  }
+  $("blk").addEventListener("input", () => {
+    const v = $("blk").value;
+    if (!v.trim()) { $("blkMsg").textContent = ""; return; }
+    const got = parseBlock(v);
+    const names = { ak: "access key", sk: "secret", tk: "session token", rg: "region", md: "model" };
+    const found = Object.keys(got);
+    if (!found.length) { $("blkMsg").textContent = "Nothing recognised in that block."; return; }
+    found.forEach((k) => { $(k).value = got[k]; });
+    $("blk").value = "";
+    $("blkMsg").textContent = "Filled: " + found.map((k) => names[k]).join(", ") + ". Check the fields, then save.";
+  });
 })();

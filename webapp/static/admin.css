@@ -10,3 +10,5 @@ input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-
 .st{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface2);border:1px solid var(--line);margin-bottom:6px;font-size:14px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--mute)}.dot.ok{background:var(--acc2)}.dot.bad{background:var(--bad)}.dot.mid{background:var(--warn)}
 .msg{min-height:20px;font-size:14px;margin-top:12px}.msg.bad{color:var(--bad)}.msg.good{color:var(--acc)}
+textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 "Geist Mono", ui-monospace, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line, rgba(128,128,128,.35)); background: transparent; color: inherit; resize: vertical; }
+textarea:focus { outline: 2px solid #10b981; outline-offset: 1px; }
