@@ -300,7 +300,7 @@ async def _invalid(request: Request, exc: RequestValidationError):
 
 @app.get("/api/providers")
 def providers():
-    return {"claude": {"available": bedrock.available()}}
+    return {"claude": {"available": bedrock.available()}, "gemini": {"available": limiter.available()}}
 
 
 # ---------------------------------------------------------------- admin ----
@@ -382,6 +382,12 @@ def admin_login(body: LoginIn, request: Request):
     resp = JSONResponse({"ok": True})
     resp.set_cookie("ha_admin", tok, max_age=SESSION_TTL, httponly=True, secure=True, samesite="strict", path="/admin")
     return resp
+
+
+@app.get("/admin/api/pool")
+def admin_pool(request: Request):
+    _require(request)
+    return limiter.status()
 
 
 @app.get("/admin/api/status")

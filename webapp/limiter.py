@@ -29,6 +29,16 @@ _mu = threading.Lock()
 _slots: list = []
 _key_locks: dict = {}
 _key_next: dict = {}
+_usage: dict = {}  # ki -> {"day": "YYYY-MM-DD" (Pacific), "req": int, "tok": int}
+
+# Free-tier quota guards. Google resets daily quota at midnight Pacific time.
+# Set these to match the model's free-tier limits; keys are rotated out at
+# ROTATE_AT of the daily request limit, before Google starts returning 429.
+KEY_DAILY_REQUESTS = int(os.getenv("KEY_DAILY_REQUESTS", "200"))
+KEY_DAILY_TOKENS = int(os.getenv("KEY_DAILY_TOKENS", "0"))  # 0 = do not track tokens
+ROTATE_AT = float(os.getenv("KEY_ROTATE_AT", "0.85"))
+WARN_FRACTION = float(os.getenv("POOL_WARN_FRACTION", "0.25"))
+_warned = [False]
 
 
 class OwnKeyRejected(Exception):
@@ -43,6 +53,92 @@ class PoolRateLimited(Exception):
     def __init__(self, daily, seconds=None):
         self.daily = daily
         self.seconds = seconds
+
+
+def _today():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+
+
+def _secs_to_reset():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    n = datetime.now(ZoneInfo("America/Los_Angeles"))
+    nxt = (n + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
+    return max(60, int((nxt - n).total_seconds()))
+
+
+def _u(ki):
+    u = _usage.get(ki)
+    t = _today()
+    if u is None or u["day"] != t:
+        u = _usage[ki] = {"day": t, "req": 0, "tok": 0}
+    return u
+
+
+def _fraction_used(ki):
+    u = _u(ki)
+    f = u["req"] / KEY_DAILY_REQUESTS if KEY_DAILY_REQUESTS > 0 else 0
+    if KEY_DAILY_TOKENS > 0:
+        f = max(f, u["tok"] / KEY_DAILY_TOKENS)
+    return f
+
+
+def _record(ki, tokens=0):
+    with _mu:
+        u = _u(ki)
+        u["req"] += 1
+        u["tok"] += tokens
+    f = _fraction_used(ki)
+    if f >= ROTATE_AT and f - 1.0 / max(KEY_DAILY_REQUESTS, 1) < ROTATE_AT:
+        print(f"[pool] key#{ki} reached {int(f * 100)}% of its daily quota, rotating to a backup key", flush=True)
+    _check_health()
+
+
+def status():
+    """Per-key capacity for the admin page and logs. Never contains key material."""
+    now = time.monotonic()
+    keys = []
+    total_left = 0.0
+    n = len(_keys())
+    for ki in range(n):
+        ms = [x for x in _slots if x["ki"] == ki]
+        parked = max((x["dead_until"] for x in ms), default=0) - now if ms and all(x["dead_until"] > now for x in ms) else 0
+        u = _u(ki)
+        used = _fraction_used(ki)
+        left = 0.0 if parked > 0 else max(0.0, 1.0 - used)
+        total_left += left
+        state = "parked" if parked > 0 else ("rotated-out" if used >= ROTATE_AT else "active")
+        keys.append({
+            "key": f"key#{ki}", "state": state,
+            "requests_today": u["req"], "daily_request_limit": KEY_DAILY_REQUESTS,
+            "tokens_today": u["tok"], "remaining_pct": round(left * 100),
+            "parked_for_seconds": int(parked) if parked > 0 else 0,
+        })
+    capacity = (total_left / n) if n else 0.0
+    return {
+        "keys": keys, "key_count": n,
+        "capacity_pct": round(capacity * 100),
+        "warning": (n == 0) or capacity < WARN_FRACTION,
+        "message": ("No Gemini keys configured." if n == 0 else
+                    f"Gemini pool low: {round(capacity * 100)}% of today's free quota left across {n} keys. Add keys to GEMINI_API_KEYS."
+                    if capacity < WARN_FRACTION else "ok"),
+    }
+
+
+def _check_health():
+    st = status()
+    if st["warning"] and not _warned[0]:
+        _warned[0] = True
+        print(f"[pool] WARNING {st['message']}", flush=True)
+    elif not st["warning"]:
+        _warned[0] = False
+
+
+def available():
+    """True when at least one shared Gemini key can still take work."""
+    return any(k["state"] != "parked" for k in status()["keys"])
 
 
 def key_count():
@@ -82,6 +178,11 @@ def _pick():
             for ki in sorted(_key_locks):
                 if any(x["ki"] == ki and x["dead_until"] - now < 1800 for x in _slots):
                     usable.append(ki)
+            # Keys at ROTATE_AT of their daily quota step back while any other
+            # key still has room, so a key is never driven into a 429.
+            fresh = [ki for ki in usable if _fraction_used(ki) < ROTATE_AT]
+            if fresh:
+                usable = fresh
             active = set(usable[:ACTIVE_KEYS])
             alive = [s for s in alive if s["ki"] in active]
             if not alive:
@@ -135,8 +236,18 @@ def install():
             raise
         if getattr(_state, "active", False):
             print(f"[call] key#{getattr(_state, 'ki', '?')} stage={getattr(_state, 'stage', '?')} model={getattr(_state, 'model', '?')} status={r.status_code} in {time.monotonic() - t0:.1f}s", flush=True)
+            ki_ = getattr(_state, "ki", None)
+            if isinstance(ki_, int):
+                tok = 0
+                try:
+                    tok = int((r.json().get("usage") or {}).get("total_tokens") or 0)
+                except Exception:
+                    pass
+                _record(ki_, tok)
             if r.status_code == 429:
-                raise PoolRateLimited("PerDay" in r.text)
+                if "PerDay" in r.text:
+                    raise PoolRateLimited(True, _secs_to_reset())
+                raise PoolRateLimited(False)
             if r.status_code in (401, 403):
                 raise PoolRateLimited(True, 24 * 3600)  # bad/revoked key: park the slot
             if r.status_code == 503:
@@ -207,4 +318,5 @@ def install():
         raise OwnKeyRejected("Your Gemini key is out of free quota right now. Try again later or use the shared option.")
 
     models.OpenAICompatibleProvider.chat = pooled
+    _check_health()
     print(f"[pool] installed: {len(_keys())} keys x {len(_models())} models = {len(_slots)} slots, active {min(ACTIVE_KEYS, len(_keys()))} + reserve {max(0, len(_keys()) - ACTIVE_KEYS)}", flush=True)
