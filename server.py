@@ -32,7 +32,21 @@ limiter.install()
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("hiring-agent")
 
-_REDACT: set = set()  # visitors' own keys, scrubbed from any log record
+_REDACT: dict = {}  # live own keys (refcounted), scrubbed from any log record
+
+
+def _track(k):
+    with lock:
+        _REDACT[k] = _REDACT.get(k, 0) + 1
+
+
+def _untrack(k):
+    with lock:
+        n = _REDACT.get(k, 0) - 1
+        if n <= 0:
+            _REDACT.pop(k, None)
+        else:
+            _REDACT[k] = n
 
 
 class _Scrub(logging.Filter):
@@ -108,7 +122,11 @@ def _run(jid: str, data: bytes):
         )
     finally:
         jobs[jid].pop("data", None)
-        jobs[jid].pop("run", None)  # drops a visitor's own key with the job
+        r = jobs[jid].pop("run", None) or {}  # drops a visitor's own key with the job
+        if r.get("own_key"):
+            _untrack(r["own_key"])
+            r["own_key"] = None
+        lane_of.pop(jid, None)
 
 
 def _worker(lane):
@@ -176,7 +194,6 @@ async def analyze(
         if not re.fullmatch(r"[A-Za-z0-9_\-]{20,200}", own_key):
             raise HTTPException(400, "That does not look like a Gemini key. Check it and try again.")
         run["own_key"] = own_key
-        _REDACT.add(own_key)
         lane = "own"
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
@@ -198,6 +215,8 @@ async def analyze(
             "run": run,
         }
         lane_of[jid] = lane
+        if run.get("own_key"):
+            _REDACT[run["own_key"]] = _REDACT.get(run["own_key"], 0) + 1
         waiting[lane].append(jid)
         wake.notify_all()
     return {"job_id": jid}
@@ -233,7 +252,7 @@ def chat(body: ChatIn):
     own = (body.own_key or "").strip()
     if run["provider"] == "gemini" and own and re.fullmatch(r"[A-Za-z0-9_\-]{20,200}", own):
         run["own_key"] = own
-        _REDACT.add(own)
+        _track(own)
     runctx.set_run(run)
     try:
         reply = pipeline.chat_reply(
@@ -244,6 +263,10 @@ def chat(body: ChatIn):
     except Exception:
         log.exception("chat failed")
         raise HTTPException(502, "The coach is busy. Try again in a moment.")
+    finally:
+        if run.get("own_key"):
+            _untrack(run["own_key"])
+        runctx.set_run(None)
     return {"reply": reply}
 
 
