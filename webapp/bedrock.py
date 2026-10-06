@@ -140,6 +140,15 @@ def _convert(messages):
     return system, turns
 
 
+_last = {"code": "", "msg": ""}
+
+
+def _note(code, msg=""):
+    import re
+    _last["code"] = code
+    _last["msg"] = re.sub(r"[A-Za-z0-9/+=_\-]{32,}", "[redacted]", msg or "")[:300]
+
+
 def _invoke(messages, options=None, schema=None, max_tokens=4096):
     from botocore.exceptions import BotoCoreError, ClientError
 
@@ -177,6 +186,7 @@ def _invoke(messages, options=None, schema=None, max_tokens=4096):
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code", "")
                 print(f"[claude] error={code} after {time.monotonic() - t0:.1f}s", flush=True)
+                _note(code, exc.response.get("Error", {}).get("Message", ""))
                 if code in AUTH_CODES:
                     _set_state("invalid", code)
                     raise ClaudeUnavailable("Claude is temporarily unavailable.")
@@ -186,6 +196,7 @@ def _invoke(messages, options=None, schema=None, max_tokens=4096):
                 raise ClaudeUnavailable("Claude could not answer just now. Please try again.")
             except BotoCoreError as exc:
                 print(f"[claude] error={type(exc).__name__} after {time.monotonic() - t0:.1f}s", flush=True)
+                _note(type(exc).__name__, str(exc))
                 if attempt < 2:
                     time.sleep(2)
                     continue
@@ -203,15 +214,33 @@ def chat(messages, options=None, schema=None):
     return {"message": {"content": _invoke(messages, options, schema)}}
 
 
+def _explain(code, msg):
+    m = (msg or "").lower()
+    if code in ("ExpiredTokenException", "ExpiredToken") or "expired" in m:
+        return "Credentials expired. The lab session token is no longer valid; paste a fresh block."
+    if code in ("UnrecognizedClientException", "InvalidSignatureException", "InvalidClientTokenId", "SignatureDoesNotMatch") or "security token" in m:
+        return "Credentials rejected. The access key, secret or session token is wrong or does not belong together."
+    if code == "AccessDeniedException":
+        return "Access denied. These credentials are valid but not allowed to call this model (model access not enabled, or the inference profile is blocked)."
+    if code == "ResourceNotFoundException" or "model identifier is invalid" in m or "provided model identifier" in m:
+        return "Model not found. Check the Model ID, and that it exists in this region (use the us./eu. inference profile ID if needed)."
+    if code == "ValidationException":
+        return "Model ID or request rejected: " + (msg or "")[:200]
+    if code in ("EndpointConnectionError", "ConnectTimeoutError", "ConnectionClosedError") or "could not connect" in m:
+        return "Could not reach Bedrock in this region. Check the region value."
+    if code in ("ThrottlingException", "ServiceUnavailableException", "ModelNotReadyException", "ModelTimeoutException"):
+        return "Bedrock is throttled or busy right now (" + code + "). Credentials look fine; try again."
+    return "Bedrock error " + (code or "unknown") + ((": " + msg[:160]) if msg else "") + "."
+
+
 def test_invoke():
     """One tiny call to check the credentials. Returns (ok, message)."""
+    _last["code"] = ""
+    _last["msg"] = ""
     try:
         _invoke([{"role": "user", "content": "Reply with the single word ok."}], {"temperature": 0}, None, 8)
         return True, "Claude answered."
-    except ClaudeUnavailable as exc:
-        st = status()
-        if st["state"] == "invalid":
-            return False, "Bedrock rejected these credentials (" + st["reason"] + ")."
-        return False, str(exc)
+    except ClaudeUnavailable:
+        return False, _explain(_last["code"], _last["msg"])
     except Exception as exc:
         return False, "Test failed (" + type(exc).__name__ + ")."

@@ -8,7 +8,7 @@
 <script src="/static/theme.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="/static/admin.css">
+<link rel="stylesheet" href="/static/admin.css?v=3">
 </head>
 <body>
 <button id="theme" class="icon-btn top" aria-label="Switch light or dark theme">
@@ -31,15 +31,16 @@
   <p>Paste the lab credentials. They stay in memory on the server and are never saved or shown again.</p>
   <div class="st"><i class="dot" id="dot"></i><span id="stTxt">Checking</span></div>
   <div class="st" id="stMeta" hidden></div>
-  <form id="credForm" autocomplete="off">
+  <form id="credForm" autocomplete="off" novalidate>
     <label for="blk">Paste the whole credentials block</label>
     <textarea id="blk" rows="4" spellcheck="false" autocomplete="off" placeholder="aws_access_key_id=...&#10;aws_secret_access_key=...&#10;aws_session_token=..."></textarea>
     <div class="msg" id="blkMsg" role="status"></div>
-    <label for="ak">Access key ID</label><input id="ak" type="password" autocomplete="off" required>
-    <label for="sk">Secret access key</label><input id="sk" type="password" autocomplete="off" required>
+    <label for="ak">Access key ID</label><input id="ak" type="password" autocomplete="off">
+    <label for="sk">Secret access key</label><input id="sk" type="password" autocomplete="off">
     <label for="tk">Session token</label><input id="tk" type="password" autocomplete="off">
-    <label for="rg">Region</label><input id="rg" type="text" placeholder="us-east-1" autocomplete="off" required>
-    <label for="md">Model or inference profile ID</label><input id="md" type="text" placeholder="us.anthropic.claude-..." autocomplete="off" required>
+    <label for="rg">Region</label><input id="rg" type="text" placeholder="us-east-1" autocomplete="off">
+    <label for="md">Model or inference profile ID</label><input id="md" type="text" autocapitalize="off" spellcheck="false" placeholder="us.anthropic.claude-..." autocomplete="off" name="bedrock-model-id">
+    <div class="msg" id="mdMsg" role="status"></div>
     <div class="row">
       <button class="btn primary" type="submit"><span>Save credentials</span></button>
       <button class="btn" type="button" id="test"><span>Test with one call</span></button>
@@ -49,6 +50,6 @@
   </form>
 </main>
 
-<script src="/static/admin.js"></script>
+<script src="/static/admin.js?v=3"></script>
 </body>
 </html>

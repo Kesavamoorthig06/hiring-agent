@@ -32,7 +32,12 @@
     refresh();
   });
   $("credForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); say("Saving");
+    e.preventDefault();
+    applyBlock();
+    const missing = [["ak", "access key"], ["sk", "secret"], ["rg", "region"], ["md", "model ID"]].filter(([k]) => !$(k).value.trim()).map(([, n]) => n);
+    if (missing.length) return say("Still missing: " + missing.join(", ") + ".", "bad");
+    if (!checkModel()) return say("Fix the model ID first.", "bad");
+    say("Saving");
     const r = await api("creds", { access_key_id: $("ak").value, secret_access_key: $("sk").value, session_token: $("tk").value, region: $("rg").value, model_id: $("md").value });
     if (!r.ok) return say(r.j.detail || "Could not save.", "bad");
     ["ak", "sk", "tk"].forEach((k) => ($(k).value = ""));
@@ -66,15 +71,30 @@
     }
     return out;
   }
-  $("blk").addEventListener("input", () => {
+  const NAMES = { ak: "access key", sk: "secret", tk: "session token", rg: "region", md: "model" };
+  function applyBlock() {
     const v = $("blk").value;
-    if (!v.trim()) { $("blkMsg").textContent = ""; return; }
+    if (!v.trim()) return [];
     const got = parseBlock(v);
-    const names = { ak: "access key", sk: "secret", tk: "session token", rg: "region", md: "model" };
     const found = Object.keys(got);
-    if (!found.length) { $("blkMsg").textContent = "Nothing recognised in that block."; return; }
+    if (!found.length) { $("blkMsg").textContent = "Nothing recognised in that block."; return []; }
     found.forEach((k) => { $(k).value = got[k]; });
     $("blk").value = "";
-    $("blkMsg").textContent = "Filled: " + found.map((k) => names[k]).join(", ") + ". Check the fields, then save.";
-  });
+    $("blkMsg").textContent = "Filled: " + found.map((k) => NAMES[k]).join(", ") + ". Check the fields, then save.";
+    return found;
+  }
+  $("blk").addEventListener("input", applyBlock);
+  $("blk").addEventListener("paste", () => setTimeout(applyBlock, 0));
+  const MODEL_OK = /^(arn:aws[a-z-]*:bedrock:[a-z0-9-]*:\d*:[\w\-\/.:]+|([a-z]{2,4}\.)?anthropic\.claude[\w.\-:]*)$/i;
+  function checkModel() {
+    const v = $("md").value.trim();
+    const el = $("mdMsg");
+    if (!v) { el.textContent = ""; el.className = "msg"; return true; }
+    if (MODEL_OK.test(v)) { el.textContent = ""; el.className = "msg"; return true; }
+    el.textContent = "This does not look like a Bedrock Claude model ID (expected something like us.anthropic.claude-sonnet-4-5-20250929-v1:0).";
+    el.className = "msg bad";
+    return false;
+  }
+  $("md").addEventListener("input", checkModel);
+  $("md").addEventListener("blur", checkModel);
 })();

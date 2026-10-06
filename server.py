@@ -287,6 +287,8 @@ async def _security_headers(request: Request, call_next):
     resp.headers["X-Frame-Options"] = "DENY"
     if request.url.path.startswith(("/api", "/admin")):
         resp.headers["Cache-Control"] = "no-store"
+    elif request.url.path.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
