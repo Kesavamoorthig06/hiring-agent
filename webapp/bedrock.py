@@ -96,7 +96,7 @@ def validate(access_key_id, secret_access_key, session_token, region, model_id):
         return "Session token looks wrong."
     if not re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", region or ""):
         return "Region looks wrong."
-    if not re.fullmatch(r"[A-Za-z0-9._:/-]{5,200}", model_id or ""):
+    if model_id and not re.fullmatch(r"[A-Za-z0-9._:/-]{5,200}", model_id):
         return "Model ID looks wrong."
     return ""
 
@@ -244,3 +244,72 @@ def test_invoke():
         return False, _explain(_last["code"], _last["msg"])
     except Exception as exc:
         return False, "Test failed (" + type(exc).__name__ + ")."
+
+
+_FAMILY = {"sonnet": 3, "haiku": 2, "opus": 1}
+
+
+def _rank(mid):
+    """Higher is better: Sonnet-class first, then newer version, then newer date, then profile ids."""
+    fam = next((v for k, v in _FAMILY.items() if k in mid), 0)
+    m = re.search(r"claude-(?:(?:opus|sonnet|haiku)-)?(\d+)(?:-(\d+))?(?!\d)", mid)
+    ver = (int(m.group(1)), int(m.group(2)) if m and m.group(2) and len(m.group(2)) < 3 else 0) if m else (0, 0)
+    d = re.search(r"-(20\d{6})-", mid)
+    date = int(d.group(1)) if d else 0
+    is_profile = 1 if re.match(r"^(us|eu|apac|global|us-gov)\.", mid) else 0
+    return (fam, ver, date, is_profile)
+
+
+def discover():
+    """List Claude models the saved credentials can see, try the best few, keep the first that answers.
+    Returns (model_id or "", message)."""
+    import boto3
+    from botocore.config import Config
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    with _mu:
+        c = dict(_creds)
+    if not c:
+        return "", "No credentials saved."
+    cl = boto3.client(
+        "bedrock", region_name=c["region"], aws_access_key_id=c["access_key_id"],
+        aws_secret_access_key=c["secret_access_key"], aws_session_token=c["session_token"],
+        config=Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 1}),
+    )
+    cands = set()
+    try:
+        for prof in cl.list_inference_profiles(maxResults=100).get("inferenceProfileSummaries", []):
+            pid = prof.get("inferenceProfileId", "")
+            if "anthropic.claude" in pid and prof.get("status", "ACTIVE") == "ACTIVE":
+                cands.add(pid)
+        for mdl in cl.list_foundation_models(byProvider="Anthropic").get("modelSummaries", []):
+            mid = mdl.get("modelId", "")
+            if "ON_DEMAND" in (mdl.get("inferenceTypesSupported") or []) and "anthropic.claude" in mid:
+                cands.add(mid)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        _note(code, exc.response.get("Error", {}).get("Message", ""))
+        return "", _explain(code, _last["msg"])
+    except BotoCoreError as exc:
+        _note(type(exc).__name__, str(exc))
+        return "", _explain(type(exc).__name__, str(exc))
+    # skip embedding/instant/legacy text models that Converse cannot drive
+    cands = [m for m in cands if not re.search(r"instant|v1(?!:)|embed|claude-v2", m)]
+    ordered = sorted(cands, key=_rank, reverse=True)
+    if not ordered:
+        return "", "No Claude models visible to these credentials in " + c["region"] + "."
+    tried = 0
+    last = ""
+    for mid in ordered[:6]:
+        tried += 1
+        with _mu:
+            _creds["model_id"] = mid
+        ok, msg = test_invoke()
+        if ok:
+            return mid, "Picked " + mid + " (tried " + str(tried) + " of " + str(len(ordered)) + " visible)."
+        last = msg
+        if _meta["state"] == "invalid":
+            break
+    with _mu:
+        _creds["model_id"] = ""
+    return "", "Saw " + str(len(ordered)) + " Claude models but none answered. Last: " + last

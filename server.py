@@ -395,7 +395,7 @@ class CredsIn(BaseModel):
     secret_access_key: str
     session_token: Optional[str] = ""
     region: str
-    model_id: str
+    model_id: Optional[str] = ""
 
 
 @app.post("/admin/api/creds")
@@ -405,8 +405,14 @@ def admin_creds(body: CredsIn, request: Request):
     problem = bedrock.validate(*vals)
     if problem:
         raise HTTPException(400, problem)
+    auto = vals[4].lower() in ("", "auto")
+    if auto:
+        vals[4] = ""
     bedrock.set_creds(*vals)
-    return bedrock.status()
+    if not auto:
+        return bedrock.status()
+    mid, msg = bedrock.discover()
+    return {**bedrock.status(), "auto": True, "picked": mid, "message": msg}
 
 
 @app.post("/admin/api/test")

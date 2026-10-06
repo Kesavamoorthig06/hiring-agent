@@ -34,14 +34,16 @@
   $("credForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     applyBlock();
-    const missing = [["ak", "access key"], ["sk", "secret"], ["rg", "region"], ["md", "model ID"]].filter(([k]) => !$(k).value.trim()).map(([, n]) => n);
+    const missing = [["ak", "access key"], ["sk", "secret"], ["rg", "region"]].filter(([k]) => !$(k).value.trim()).map(([, n]) => n);
     if (missing.length) return say("Still missing: " + missing.join(", ") + ".", "bad");
     if (!checkModel()) return say("Fix the model ID first.", "bad");
-    say("Saving");
+    say($("md").value.trim() && $("md").value.trim().toLowerCase() !== "auto" ? "Saving" : "Saving and finding a model that works");
     const r = await api("creds", { access_key_id: $("ak").value, secret_access_key: $("sk").value, session_token: $("tk").value, region: $("rg").value, model_id: $("md").value });
     if (!r.ok) return say(r.j.detail || "Could not save.", "bad");
     ["ak", "sk", "tk"].forEach((k) => ($(k).value = ""));
-    paint(r.j); say("Saved. Use Test to check them.", "good");
+    paint(r.j);
+    if (r.j.auto) { if (r.j.picked) $("md").value = r.j.picked; return say(r.j.message || "", r.j.picked ? "good" : "bad"); }
+    say("Saved. Use Test to check them.", "good");
   });
   $("test").addEventListener("click", async () => {
     say("Calling Claude once");
@@ -89,7 +91,7 @@
   function checkModel() {
     const v = $("md").value.trim();
     const el = $("mdMsg");
-    if (!v) { el.textContent = ""; el.className = "msg"; return true; }
+    if (!v || v.toLowerCase() === "auto") { el.textContent = ""; el.className = "msg"; return true; }
     if (MODEL_OK.test(v)) { el.textContent = ""; el.className = "msg"; return true; }
     el.textContent = "This does not look like a Bedrock Claude model ID (expected something like us.anthropic.claude-sonnet-4-5-20250929-v1:0).";
     el.className = "msg bad";

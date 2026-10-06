@@ -39,7 +39,7 @@
     <label for="sk">Secret access key</label><input id="sk" type="password" autocomplete="off">
     <label for="tk">Session token</label><input id="tk" type="password" autocomplete="off">
     <label for="rg">Region</label><input id="rg" type="text" placeholder="us-east-1" autocomplete="off">
-    <label for="md">Model or inference profile ID</label><input id="md" type="text" autocapitalize="off" spellcheck="false" placeholder="us.anthropic.claude-..." autocomplete="off" name="bedrock-model-id">
+    <label for="md">Model or inference profile ID (optional)</label><input id="md" type="text" autocapitalize="off" spellcheck="false" placeholder="Leave blank to pick automatically" autocomplete="off" name="bedrock-model-id">
     <div class="msg" id="mdMsg" role="status"></div>
     <div class="row">
       <button class="btn primary" type="submit"><span>Save credentials</span></button>
@@ -50,6 +50,6 @@
   </form>
 </main>
 
-<script src="/static/admin.js?v=3"></script>
+<script src="/static/admin.js?v=4"></script>
 </body>
 </html>
