@@ -5,23 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Hiring Agent - settings</title>
-<script>try{var t=localStorage.getItem("ha-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t}catch(e){}</script>
+<script src="/static/theme.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
-<style>
-body{min-height:100vh;display:grid;place-items:center;padding:24px}
-.box{width:100%;max-width:520px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:var(--shadow)}
-.box h1{font-size:30px;letter-spacing:-.04em;margin:0 0 6px}
-.box p{color:var(--mute);margin:0 0 18px}
-label{display:block;font-size:13px;color:var(--mute);margin:14px 0 6px}
-input{width:100%;box-sizing:border-box;padding:13px 14px;border-radius:12px;border:1px solid var(--line2);background:var(--surface2);color:var(--ink);font:inherit;font-size:16px}
-input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
-.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
-.top{position:fixed;top:14px;right:14px}
-.st{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface2);border:1px solid var(--line);margin-bottom:6px;font-size:14px}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--mute)}.dot.ok{background:var(--acc2)}.dot.bad{background:var(--bad)}.dot.mid{background:var(--warn)}
-.msg{min-height:20px;font-size:14px;margin-top:12px}.msg.bad{color:var(--bad)}.msg.good{color:var(--acc)}
-</style>
+<link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
 <button id="theme" class="icon-btn top" aria-label="Switch light or dark theme">
@@ -59,58 +46,6 @@ input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-
   </form>
 </main>
 
-<script>
-(() => {
-  const $ = (id) => document.getElementById(id);
-  $("theme").addEventListener("click", () => {
-    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = t; try { localStorage.setItem("ha-theme", t); } catch (e) {}
-  });
-  const api = async (path, body) => {
-    const r = await fetch("/admin/api/" + path, { method: body === undefined ? "GET" : "POST", credentials: "same-origin",
-      headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    const j = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, j };
-  };
-  const say = (t, kind) => { const m = $("msg"); m.textContent = t || ""; m.className = "msg " + (kind || ""); };
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : "";
-  function paint(s) {
-    const map = { unset: ["", "No credentials set"], untested: ["mid", "Saved, not tested yet"], ok: ["ok", "Working"], invalid: ["bad", "Rejected or expired"] };
-    const [cls, txt] = map[s.state] || ["", s.state];
-    $("dot").className = "dot " + cls; $("stTxt").textContent = txt + (s.reason ? " (" + s.reason + ")" : "");
-    const meta = $("stMeta");
-    if (s.set) { meta.hidden = false; meta.textContent = "Region " + s.region + " | set " + when(s.set_at); } else meta.hidden = true;
-  }
-  async function refresh() {
-    const r = await api("status");
-    if (r.status === 404) { $("panel").hidden = true; $("gate").hidden = false; return false; }
-    $("gate").hidden = true; $("panel").hidden = false; paint(r.j); return true;
-  }
-  $("gateForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); $("gateMsg").textContent = "";
-    const r = await api("login", { passcode: $("pass").value });
-    $("pass").value = "";
-    if (!r.ok) { $("gateMsg").textContent = r.j.detail || "Could not sign in."; $("gateMsg").className = "msg bad"; return; }
-    refresh();
-  });
-  $("credForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); say("Saving");
-    const r = await api("creds", { access_key_id: $("ak").value, secret_access_key: $("sk").value, session_token: $("tk").value, region: $("rg").value, model_id: $("md").value });
-    if (!r.ok) return say(r.j.detail || "Could not save.", "bad");
-    ["ak", "sk", "tk"].forEach((k) => ($(k).value = ""));
-    paint(r.j); say("Saved. Use Test to check them.", "good");
-  });
-  $("test").addEventListener("click", async () => {
-    say("Calling Claude once");
-    const r = await api("test", {});
-    if (r.status === 404) return refresh();
-    paint(r.j); say(r.j.message || "", r.j.ok ? "good" : "bad");
-  });
-  $("clear").addEventListener("click", async () => {
-    const r = await api("clear", {}); if (r.status === 404) return refresh(); paint(r.j); say("Cleared.", "good");
-  });
-  refresh();
-})();
-</script>
+<script src="/static/admin.js"></script>
 </body>
 </html>

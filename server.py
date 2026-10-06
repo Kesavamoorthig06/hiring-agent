@@ -270,6 +270,26 @@ def chat(body: ChatIn):
     return {"reply": reply}
 
 
+CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+)
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers["Content-Security-Policy"] = CSP
+    resp.headers["Strict-Transport-Security"] = "max-age=31536000"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["X-Frame-Options"] = "DENY"
+    if request.url.path.startswith(("/api", "/admin")):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.exception_handler(RequestValidationError)
 async def _invalid(request: Request, exc: RequestValidationError):
     # The default handler echoes the submitted input, which could hold a key.
