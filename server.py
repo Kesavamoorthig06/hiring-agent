@@ -282,10 +282,25 @@ def providers():
 
 
 # ---------------------------------------------------------------- admin ----
-ADMIN_PASSCODE = os.getenv("ADMIN_PASSCODE", "")
+ADMIN_HASH = os.getenv("ADMIN_PASSCODE_HASH", "")  # scrypt$N$r$p$salt$hash, never the passcode itself
+ADMIN_PASSCODE = ADMIN_HASH  # truthy when the settings page is enabled
 _sessions: dict = {}  # session token -> expiry
 _fails: dict = {}  # client -> list of failure times
 SESSION_TTL = 2 * 3600
+
+
+def _passcode_ok(candidate: str) -> bool:
+    import hashlib
+
+    try:
+        scheme, n, r, p, salt, want = ADMIN_HASH.split("$")
+        got = hashlib.scrypt(
+            candidate.encode(), salt=bytes.fromhex(salt), n=int(n), r=int(r), p=int(p),
+            dklen=len(want) // 2, maxmem=128 * 1024 * 1024,
+        )
+        return scheme == "scrypt" and hmac.compare_digest(got.hex(), want)
+    except Exception:
+        return False
 
 
 def _client_id(request: Request) -> str:
@@ -334,7 +349,7 @@ def admin_login(body: LoginIn, request: Request):
     recent = [t for t in _fails.get(who, []) if now - t < 600]
     if len(recent) >= 8:
         raise HTTPException(429, "Too many tries. Wait a few minutes.")
-    if not hmac.compare_digest(body.passcode.encode(), ADMIN_PASSCODE.encode()):
+    if not _passcode_ok(body.passcode):
         recent.append(now)
         _fails[who] = recent
         time.sleep(1.0)
