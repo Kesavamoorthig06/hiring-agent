@@ -63,6 +63,7 @@ def status():
             "model_id": _creds.get("model_id"),
             "set_at": _meta["set_at"],
             "changed_at": _meta["changed_at"],
+            "probe": list(_meta.get("probe", [])),
         }
 
 
@@ -298,18 +299,37 @@ def discover():
     ordered = sorted(cands, key=_rank, reverse=True)
     if not ordered:
         return "", "No Claude models visible to these credentials in " + c["region"] + "."
-    tried = 0
-    last = ""
-    for mid in ordered[:6]:
-        tried += 1
+    # Claude Code's own default model ids first, then everything else by rank
+    known = [
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+    ]
+    order = known + [m for m in ordered if m not in known]
+    probe = []
+    with _mu:
+        _meta["probe"] = probe
+    for mid in order[:60]:
         with _mu:
             _creds["model_id"] = mid
+        _last["code"] = ""
+        _last["msg"] = ""
+        _set_state("untested", "")
         ok, msg = test_invoke()
+        probe.append({"model": mid, "ok": ok, "code": _last["code"], "msg": _last["msg"][:160]})
         if ok:
-            return mid, "Picked " + mid + " (tried " + str(tried) + " of " + str(len(ordered)) + " visible)."
-        last = msg
-        if _meta["state"] == "invalid":
+            return mid, "Picked " + mid + " (tried " + str(len(probe)) + ", API: Converse)."
+        if _last["code"] in ("ExpiredTokenException", "ExpiredToken", "UnrecognizedClientException", "InvalidSignatureException", "InvalidClientTokenId", "SignatureDoesNotMatch"):
             break
     with _mu:
         _creds["model_id"] = ""
-    return "", "Saw " + str(len(ordered)) + " Claude models but none answered. Last: " + last
+    _set_state("untested", "")
+    from collections import Counter
+    cnt = Counter(p["code"] or "other" for p in probe)
+    return "", "Tried " + str(len(probe)) + " Claude ids with Converse, none answered: " + ", ".join(k + " x" + str(v) for k, v in cnt.items()) + "."
