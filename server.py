@@ -105,7 +105,7 @@ def _run(jid: str, data: bytes):
         jobs[jid].update(status="done", stage="done", label="Done")
         print(f"[job {jid[:8]}] done in {time.time() - started:.0f}s", flush=True)
         AVG_SECONDS[0] = 0.7 * AVG_SECONDS[0] + 0.3 * (time.time() - started)
-    except (limiter.OwnKeyRejected, bedrock.ClaudeUnavailable) as exc:
+    except (limiter.OwnKeyRejected, limiter.PoolExhausted, bedrock.ClaudeUnavailable) as exc:
         jobs[jid].update(status="error", error=str(exc))
     except ValueError as exc:
         msg = str(exc)

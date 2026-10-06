@@ -21,6 +21,7 @@ from webapp import bedrock, runctx
 
 MIN_INTERVAL = float(os.getenv("LLM_MIN_INTERVAL", "6"))
 CALL_TIMEOUT = float(os.getenv("LLM_CALL_TIMEOUT", "15"))
+MAX_PARK_WAIT = float(os.getenv("POOL_MAX_PARK_WAIT", "90"))
 ACTIVE_KEYS = int(os.getenv("ACTIVE_KEYS", "10"))
 _state = threading.local()
 _installed = [False]
@@ -32,6 +33,10 @@ _key_next: dict = {}
 
 class OwnKeyRejected(Exception):
     """Safe to show to the visitor."""
+
+
+class PoolExhausted(Exception):
+    """Every pooled Gemini slot is parked (quota gone or key rejected). Safe to show."""
 
 
 class PoolRateLimited(Exception):
@@ -81,6 +86,11 @@ def _pick():
             alive = [s for s in alive if s["ki"] in active]
             if not alive:
                 soonest = min((s["dead_until"] for s in _slots), default=now) - now
+                if soonest > MAX_PARK_WAIT:
+                    raise PoolExhausted(
+                        "The shared Gemini keys are out of quota right now. "
+                        "Try the Claude option, use your own key, or retry later."
+                    )
             else:
                 soonest = None
                 alive.sort(key=lambda s: (s["rank"], _key_next[s["ki"]]))
