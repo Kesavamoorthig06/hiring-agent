@@ -150,6 +150,39 @@ def _note(code, msg=""):
     _last["msg"] = re.sub(r"[A-Za-z0-9/+=_\-]{32,}", "[redacted]", msg or "")[:300]
 
 
+def _inline(node, defs):
+    """Resolve $ref/$defs so the tool schema is self-contained (Claude fills these more reliably)."""
+    if isinstance(node, dict):
+        if "$ref" in node and isinstance(node["$ref"], str):
+            name = node["$ref"].rsplit("/", 1)[-1]
+            if name in defs:
+                return _inline(defs[name], defs)
+        return {k: _inline(v, defs) for k, v in node.items() if k not in ("$defs", "definitions")}
+    if isinstance(node, list):
+        return [_inline(v, defs) for v in node]
+    return node
+
+
+def _unwrap(value, schema):
+    """If the model nested or stringified the object, bring it back to the schema's top level."""
+    need = set((schema or {}).get("required") or [])
+    for _ in range(3):
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                break
+        if isinstance(value, dict) and need and not need <= set(value):
+            inner = [v for v in value.values() if isinstance(v, (dict, str))]
+            if len(value) == 1 and inner:
+                value = inner[0]
+                continue
+        break
+    if isinstance(value, dict) and need and not need <= set(value):
+        print("[claude] shape mismatch, top-level keys=" + ",".join(sorted(map(str, value)))[:200], flush=True)
+    return value
+
+
 def _invoke(messages, options=None, schema=None, max_tokens=4096):
     from botocore.exceptions import BotoCoreError, ClientError
 
@@ -166,6 +199,7 @@ def _invoke(messages, options=None, schema=None, max_tokens=4096):
     if system:
         args["system"] = system
     if schema:
+        schema = _inline(schema, schema.get("$defs") or schema.get("definitions") or {})
         args["toolConfig"] = {
             "tools": [
                 {
@@ -206,7 +240,7 @@ def _invoke(messages, options=None, schema=None, max_tokens=4096):
     blocks = resp.get("output", {}).get("message", {}).get("content", [])
     for b in blocks:
         if "toolUse" in b:
-            return json.dumps(b["toolUse"].get("input", {}))
+            return json.dumps(_unwrap(b["toolUse"].get("input", {}), schema))
     return "".join(b.get("text", "") for b in blocks)
 
 
