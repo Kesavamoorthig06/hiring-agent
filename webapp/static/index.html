@@ -74,6 +74,18 @@
         </span>
         <span class="drop-go"><svg class="ic"><use href="#i-arrow"/></svg></span>
       </div>
+      <div class="mdl rv" style="--d:.2s" id="mdl">
+        <div class="seg" role="radiogroup" aria-label="Choose the model">
+          <button type="button" class="seg-b on" role="radio" aria-checked="true" data-p="gemini"><svg class="ic"><use href="#i-spark"/></svg>Gemini</button>
+          <button type="button" class="seg-b" role="radio" aria-checked="false" data-p="claude" id="segClaude"><svg class="ic"><use href="#i-brain"/></svg>Claude</button>
+        </div>
+        <p class="mdl-note" id="claudeNote" hidden>Claude is temporarily unavailable. Gemini still works.</p>
+        <details class="own" id="ownBox">
+          <summary>Use your own Gemini key <span>optional</span></summary>
+          <input id="ownKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste a Gemini API key" aria-label="Your Gemini API key">
+          <small>Used for your run only. Never saved, never shown again.</small>
+        </details>
+      </div>
       <p id="uploadErr" class="err" role="alert" hidden></p>
 
       <ul class="trust rv" style="--d:.24s">

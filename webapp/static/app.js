@@ -60,6 +60,25 @@
   }
   addEventListener("scroll", onScroll, { passive: true }); onScroll();
 
+  /* ---------- model picker ---------- */
+  let provider = "gemini", sessionKey = "";
+  const segs = document.querySelectorAll(".seg-b");
+  function pick(p) {
+    provider = p;
+    segs.forEach((b) => { const on = b.dataset.p === p; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+    $("ownBox").hidden = p !== "gemini";
+  }
+  segs.forEach((b) => b.addEventListener("click", () => { if (!b.disabled) pick(b.dataset.p); }));
+  async function loadProviders() {
+    try {
+      const r = await fetch("/api/providers"); const j = await r.json();
+      const ok = !!(j.claude && j.claude.available);
+      $("segClaude").disabled = !ok; $("claudeNote").hidden = ok;
+      if (!ok && provider === "claude") pick("gemini");
+    } catch (e) {}
+  }
+  loadProviders(); setInterval(loadProviders, 60000);
+
   /* ---------- upload ---------- */
   const drop = $("drop"), fileIn = $("file");
   const pickFile = () => fileIn.click();
@@ -77,7 +96,7 @@
   $("fab").addEventListener("click", () => $("chatCol").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   function reset() {
-    state = null; history = []; fileIn.value = ""; $("uploadErr").hidden = true; $("log").innerHTML = "";
+    state = null; history = []; sessionKey = ""; $("ownKey").value = ""; fileIn.value = ""; $("uploadErr").hidden = true; $("log").innerHTML = "";
     $("ringP").style.strokeDashoffset = 377; show("home");
   }
   function fail(msg) { show("home"); const e = $("uploadErr"); e.textContent = msg; e.hidden = false; fileIn.value = ""; }
@@ -87,10 +106,13 @@
     if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") return fail("Please upload a PDF file.");
     if (file.size > 5 * 1024 * 1024) return fail("That file is over 5 MB.");
     show("progress"); setStage("parse", "Reading your resume");
-    const fd = new FormData(); fd.append("file", file);
+    const fd = new FormData(); fd.append("file", file); fd.append("provider", provider);
+    sessionKey = provider === "gemini" ? $("ownKey").value.trim() : "";
+    if (sessionKey) fd.append("own_key", sessionKey);
+    $("ownKey").value = "";
     try {
       const r = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!r.ok) return fail((await r.json().catch(() => ({}))).detail || "Upload failed.");
+      if (!r.ok) { loadProviders(); return fail((await r.json().catch(() => ({}))).detail || "Upload failed."); }
       const first = await r.json();
       poll(first.job_id);
     } catch { fail("Network error. Check your connection and try again."); }
@@ -193,7 +215,7 @@
     const t = bot("Thinking…", false); t.classList.add("typing");
     try {
       const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, resume_text: state.resume_text, evaluation: state.evaluation, suggestions: state.suggestions }) });
+        body: JSON.stringify({ provider, own_key: sessionKey || null, messages: history, resume_text: state.resume_text, evaluation: state.evaluation, suggestions: state.suggestions }) });
       const j = await r.json();
       t.remove();
       if (!r.ok) { history.pop(); bot(j.detail || "Something went wrong. Try again.", false); }

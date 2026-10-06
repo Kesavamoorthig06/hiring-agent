@@ -20,6 +20,7 @@ from llm_utils import extract_json_from_response, initialize_llm_provider
 from models import Basics, JSONResume, build_evaluation_model
 from pdf import PDFHandler
 from roles import load_role
+from webapp import runctx
 from transform import convert_github_data_to_text, convert_json_resume_to_text
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def _extract_resume(pdf_path: str, progress=None, role=None, gh_box=None) -> Opt
     if progress:
         progress("parse", "Reading your resume", f"Sections read: 0 of {len(SECTIONS)}")
     with ThreadPoolExecutor(max_workers=len(SECTIONS) + 1) as ex:
-        futs = {ex.submit(run, name): name for name in SECTIONS}
+        futs = {ex.submit(runctx.spawn(run, name)): name for name in SECTIONS}
         gh_fut = None
         for fut in as_completed(futs):
             name, data = fut.result()
@@ -115,7 +116,7 @@ def _extract_resume(pdf_path: str, progress=None, role=None, gh_box=None) -> Opt
             if name == "basics" and role is not None and gh_box is not None and data:
                 try:
                     b = Basics(**data["basics"]) if isinstance(data.get("basics"), dict) else None
-                    gh_fut = ex.submit(_github_data, JSONResume(basics=b), role)
+                    gh_fut = ex.submit(runctx.spawn(_github_data, JSONResume(basics=b), role))
                 except Exception:
                     gh_fut = None
             done_n += 1

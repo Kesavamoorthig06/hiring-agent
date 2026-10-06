@@ -17,6 +17,7 @@ import time
 import requests
 
 import models
+from webapp import bedrock, runctx
 
 MIN_INTERVAL = float(os.getenv("LLM_MIN_INTERVAL", "6"))
 CALL_TIMEOUT = float(os.getenv("LLM_CALL_TIMEOUT", "15"))
@@ -27,6 +28,10 @@ _mu = threading.Lock()
 _slots: list = []
 _key_locks: dict = {}
 _key_next: dict = {}
+
+
+class OwnKeyRejected(Exception):
+    """Safe to show to the visitor."""
 
 
 class PoolRateLimited(Exception):
@@ -134,6 +139,11 @@ def install():
     def pooled(self, model, messages, options=None, **kwargs):
         if not _slots:
             return original(self, model, messages, options, **kwargs)
+        run = runctx.get_run() or {}
+        if run.get("provider") == "claude":
+            return bedrock.chat(messages, options, kwargs.get("format"))
+        if run.get("own_key"):
+            return own_key_call(self, messages, options, kwargs, run["own_key"], _stage_name())
         attempts = 0
         while True:
             slot = _pick()
@@ -161,6 +171,30 @@ def install():
                     raise
             finally:
                 _key_locks[ki].release()
+
+    def own_key_call(self, messages, options, kwargs, own_key, stage):
+        # A visitor's own Gemini key: used for this run only, never pooled or stored.
+        for rnd in range(2):
+            for m in _models():
+                prov = copy.copy(self)
+                prov.api_key = own_key
+                _state.active = True
+                _state.ki = "own"
+                _state.stage = stage
+                _state.model = m
+                try:
+                    return original(prov, m, messages, options, **kwargs)
+                except PoolRateLimited as e:
+                    if e.seconds == 24 * 3600:
+                        raise OwnKeyRejected("That Gemini key was not accepted. Check it and try again.")
+                except requests.HTTPError as e:
+                    if "API_KEY_INVALID" in str(e) or "API key not valid" in str(e):
+                        raise OwnKeyRejected("That Gemini key was not accepted. Check it and try again.")
+                    raise
+                finally:
+                    _state.active = False
+            time.sleep(3)
+        raise OwnKeyRejected("Your Gemini key is out of free quota right now. Try again later or use the shared option.")
 
     models.OpenAICompatibleProvider.chat = pooled
     print(f"[pool] installed: {len(_keys())} keys x {len(_models())} models = {len(_slots)} slots, active {min(ACTIVE_KEYS, len(_keys()))} + reserve {max(0, len(_keys()) - ACTIVE_KEYS)}", flush=True)
