@@ -27,14 +27,20 @@ _state = threading.local()
 _installed = [False]
 _mu = threading.Lock()
 _slots: list = []
-_key_locks: dict = {}
-_key_next: dict = {}
-_usage: dict = {}  # ki -> {"day": "YYYY-MM-DD" (Pacific), "req": int, "tok": int}
+_usage: dict = {}  # (project, model) -> {"day": "YYYY-MM-DD" (Pacific), "req": int, "tok": int}
+_proj_locks: dict = {}
+_proj_next: dict = {}
 
 # Free-tier quota guards. Google resets daily quota at midnight Pacific time.
 # Set these to match the model's free-tier limits; keys are rotated out at
 # ROTATE_AT of the daily request limit, before Google starts returning 429.
-KEY_DAILY_REQUESTS = int(os.getenv("KEY_DAILY_REQUESTS", "200"))
+# Google applies quota per PROJECT and per MODEL, not per key. AI Studio's Rate Limit
+# page for these projects (free tier) shows 5 RPM, 250K TPM and 20 RPD per model.
+# KEY_PROJECTS maps keys to their AI Studio project by the key's last 4 characters:
+#   KEY_PROJECTS=viw=pool-9,26NA=pool-9,lovQ=pool-8
+# Keys with no entry are treated as their own project.
+KEY_DAILY_REQUESTS = int(os.getenv("KEY_DAILY_REQUESTS", "20"))  # per project, per model
+PROJECT_RPM = float(os.getenv("PROJECT_RPM", "5"))
 KEY_DAILY_TOKENS = int(os.getenv("KEY_DAILY_TOKENS", "0"))  # 0 = do not track tokens
 ROTATE_AT = float(os.getenv("KEY_ROTATE_AT", "0.85"))
 WARN_FRACTION = float(os.getenv("POOL_WARN_FRACTION", "0.25"))
@@ -69,60 +75,99 @@ def _secs_to_reset():
     return max(60, int((nxt - n).total_seconds()))
 
 
-def _u(ki):
-    u = _usage.get(ki)
+def _project_map():
+    out = {}
+    for part in os.getenv("KEY_PROJECTS", "").split(","):
+        if "=" in part:
+            suf, proj = part.split("=", 1)
+            out[suf.strip()] = proj.strip()
+    return out
+
+
+def _project(ki):
+    keys = _keys()
+    if ki >= len(keys):
+        return f"key{ki}"
+    return _project_map().get(keys[ki][-4:], f"key{ki}")
+
+
+def _projects():
+    seen = []
+    for ki in range(len(_keys())):
+        p = _project(ki)
+        if p not in seen:
+            seen.append(p)
+    return seen
+
+
+def _u(proj, model):
+    k = (proj, model)
+    u = _usage.get(k)
     t = _today()
     if u is None or u["day"] != t:
-        u = _usage[ki] = {"day": t, "req": 0, "tok": 0}
+        u = _usage[k] = {"day": t, "req": 0, "tok": 0}
     return u
 
 
-def _fraction_used(ki):
-    u = _u(ki)
+def _fraction_used(ki, model):
+    u = _u(_project(ki), model)
     f = u["req"] / KEY_DAILY_REQUESTS if KEY_DAILY_REQUESTS > 0 else 0
     if KEY_DAILY_TOKENS > 0:
         f = max(f, u["tok"] / KEY_DAILY_TOKENS)
     return f
 
 
-def _record(ki, tokens=0):
+def _record(ki, model, tokens=0):
     with _mu:
-        u = _u(ki)
+        u = _u(_project(ki), model)
         u["req"] += 1
         u["tok"] += tokens
-    f = _fraction_used(ki)
+    f = _fraction_used(ki, model)
     if f >= ROTATE_AT and f - 1.0 / max(KEY_DAILY_REQUESTS, 1) < ROTATE_AT:
-        print(f"[pool] key#{ki} reached {int(f * 100)}% of its daily quota, rotating to a backup key", flush=True)
+        print(f"[pool] project {_project(ki)} {model} reached {int(f * 100)}% of its daily quota, rotating to another project", flush=True)
     _check_health()
 
 
+def _park_bucket(ki, model, seconds):
+    """A daily 429 means the whole project/model bucket is spent, so park every key in it."""
+    proj = _project(ki)
+    until = time.monotonic() + seconds
+    for x in _slots:
+        if x["model"] == model and _project(x["ki"]) == proj:
+            x["dead_until"] = max(x["dead_until"], until)
+
+
 def status():
-    """Per-key capacity for the admin page and logs. Never contains key material."""
+    """Per-project, per-model capacity for the admin page and logs. Never contains key material."""
     now = time.monotonic()
-    keys = []
+    buckets = []
     total_left = 0.0
-    n = len(_keys())
-    for ki in range(n):
-        ms = [x for x in _slots if x["ki"] == ki]
-        parked = max((x["dead_until"] for x in ms), default=0) - now if ms and all(x["dead_until"] > now for x in ms) else 0
-        u = _u(ki)
-        used = _fraction_used(ki)
-        left = 0.0 if parked > 0 else max(0.0, 1.0 - used)
-        total_left += left
-        state = "parked" if parked > 0 else ("rotated-out" if used >= ROTATE_AT else "active")
-        keys.append({
-            "key": f"key#{ki}", "state": state,
-            "requests_today": u["req"], "daily_request_limit": KEY_DAILY_REQUESTS,
-            "tokens_today": u["tok"], "remaining_pct": round(left * 100),
-            "parked_for_seconds": int(parked) if parked > 0 else 0,
-        })
+    projs = _projects()
+    mods = _models()
+    for proj in projs:
+        kis = [ki for ki in range(len(_keys())) if _project(ki) == proj]
+        for m in mods:
+            ms = [x for x in _slots if x["model"] == m and x["ki"] in kis]
+            parked = (min(x["dead_until"] for x in ms) - now) if ms and all(x["dead_until"] > now for x in ms) else 0
+            u = _u(proj, m)
+            used = _fraction_used(kis[0], m)
+            left = 0.0 if parked > 0 else max(0.0, 1.0 - used)
+            total_left += left
+            state = "parked" if parked > 0 else ("rotated-out" if used >= ROTATE_AT else "active")
+            buckets.append({
+                "project": proj, "keys": len(kis), "model": m, "state": state,
+                "requests_today": u["req"], "daily_request_limit": KEY_DAILY_REQUESTS,
+                "tokens_today": u["tok"], "remaining_pct": round(left * 100),
+                "parked_for_seconds": int(parked) if parked > 0 else 0,
+            })
+    n = len(buckets)
     capacity = (total_left / n) if n else 0.0
     return {
-        "keys": keys, "key_count": n,
+        "buckets": buckets, "project_count": len(projs), "key_count": len(_keys()),
         "capacity_pct": round(capacity * 100),
         "warning": (n == 0) or capacity < WARN_FRACTION,
         "message": ("No Gemini keys configured." if n == 0 else
-                    f"Gemini pool low: {round(capacity * 100)}% of today's free quota left across {n} keys. Add keys to GEMINI_API_KEYS."
+                    f"Gemini pool low: {round(capacity * 100)}% of today's free quota left across {len(projs)} projects. Add keys from NEW projects to GEMINI_API_KEYS."
                     if capacity < WARN_FRACTION else "ok"),
     }
 
@@ -137,12 +182,12 @@ def _check_health():
 
 
 def available():
-    """True when at least one shared Gemini key can still take work."""
-    return any(k["state"] != "parked" for k in status()["keys"])
+    """True when at least one shared Gemini bucket can still take work."""
+    return any(b["state"] != "parked" for b in status()["buckets"])
 
 
 def key_count():
-    return max(1, len(_keys()))
+    return max(1, len(_projects()))
 
 
 def _keys():
@@ -160,9 +205,9 @@ def _build():
     for mi, m in enumerate(mods):
         for ki, k in enumerate(keys):
             _slots.append({"key": k, "ki": ki, "model": m, "rank": mi, "dead_until": 0.0})
-    for ki in range(len(keys)):
-        _key_locks[ki] = threading.Lock()
-        _key_next[ki] = 0.0
+    for proj in _projects():
+        _proj_locks[proj] = threading.Lock()  # a project serves one prompt at a time (RPM is shared)
+        _proj_next[proj] = 0.0
 
 
 def _pick():
@@ -170,21 +215,12 @@ def _pick():
         now = time.monotonic()
         with _mu:
             alive = [s for s in _slots if s["dead_until"] <= now]
-            # Active set = the first ACTIVE_KEYS keys that are not daily-parked.
-            # Keys past that stay in reserve and are promoted one by one as
-            # active keys run out of daily quota. Within the active set the
-            # least recently used key goes next, so load spreads evenly.
-            usable = []
-            for ki in sorted(_key_locks):
-                if any(x["ki"] == ki and x["dead_until"] - now < 1800 for x in _slots):
-                    usable.append(ki)
-            # Keys at ROTATE_AT of their daily quota step back while any other
-            # key still has room, so a key is never driven into a 429.
-            fresh = [ki for ki in usable if _fraction_used(ki) < ROTATE_AT]
+            # Slots whose project/model bucket is at ROTATE_AT of its daily quota
+            # step back while any other bucket still has room, so a project is
+            # never driven into a 429.
+            fresh = [s for s in alive if _fraction_used(s["ki"], s["model"]) < ROTATE_AT]
             if fresh:
-                usable = fresh
-            active = set(usable[:ACTIVE_KEYS])
-            alive = [s for s in alive if s["ki"] in active]
+                alive = fresh
             if not alive:
                 soonest = min((s["dead_until"] for s in _slots), default=now) - now
                 if soonest > MAX_PARK_WAIT:
@@ -194,9 +230,9 @@ def _pick():
                     )
             else:
                 soonest = None
-                alive.sort(key=lambda s: (s["rank"], _key_next[s["ki"]]))
+                alive.sort(key=lambda s: (s["rank"], _proj_next[_project(s["ki"])]))
                 for s in alive:
-                    if _key_locks[s["ki"]].acquire(blocking=False):
+                    if _proj_locks[_project(s["ki"])].acquire(blocking=False):
                         return s
         time.sleep(0.4 if soonest is None else min(15.0, max(1.0, soonest)))
 
@@ -243,7 +279,7 @@ def install():
                     tok = int((r.json().get("usage") or {}).get("total_tokens") or 0)
                 except Exception:
                     pass
-                _record(ki_, tok)
+                _record(ki_, getattr(_state, 'model', ''), tok)
             if r.status_code == 429:
                 if "PerDay" in r.text:
                     raise PoolRateLimited(True, _secs_to_reset())
@@ -270,7 +306,8 @@ def install():
             slot = _pick()
             ki = slot["ki"]
             try:
-                wait = _key_next[ki] - time.monotonic()
+                proj = _project(ki)
+                wait = _proj_next[proj] - time.monotonic()
                 if wait > 0:
                     time.sleep(wait)
                 prov = copy.copy(self)
@@ -283,15 +320,19 @@ def install():
                     return original(prov, slot["model"], messages, options, **kwargs)
                 finally:
                     _state.active = False
-                    _key_next[ki] = time.monotonic() + MIN_INTERVAL
+                    _proj_next[proj] = time.monotonic() + max(MIN_INTERVAL, 60.0 / PROJECT_RPM)
             except PoolRateLimited as e:
                 attempts += 1
-                slot["dead_until"] = time.monotonic() + (e.seconds or (6 * 3600 if e.daily else 70))
-                print(f"[pool] slot key#{ki} {slot['model']} cooling ({'daily' if e.daily else 'rpm'}, {int(e.seconds or (6*3600 if e.daily else 70))}s)")
+                secs = e.seconds or (_secs_to_reset() if e.daily else 70)
+                if e.daily and e.seconds != 24 * 3600:
+                    _park_bucket(ki, slot["model"], secs)  # daily quota is per project and model
+                else:
+                    slot["dead_until"] = time.monotonic() + secs
+                print(f"[pool] slot key#{ki} {slot['model']} cooling ({'daily' if e.daily else 'rpm'}, {int(secs)}s)")
                 if attempts > 60:
                     raise
             finally:
-                _key_locks[ki].release()
+                _proj_locks[_project(ki)].release()
 
     def own_key_call(self, messages, options, kwargs, own_key, stage):
         # A visitor's own Gemini key: used for this run only, never pooled or stored.
